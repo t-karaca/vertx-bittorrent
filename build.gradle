@@ -40,4 +40,22 @@ dependencies {
     implementation "io.vertx:vertx-core:${vertxVersion}"
     implementation "io.vertx:vertx-config:${vertxVersion}"
     implementation "io.vertx:vertx-config-yaml:${vertxVersion}"
+
+    implementation "be.adaxisoft:Bencode:2.0.0"
+
+    testImplementation "org.junit.jupiter:junit-jupiter:5.10.3"
+    testImplementation "org.assertj:assertj-core:3.26.3"
+    testImplementation "org.wiremock:wiremock-standalone:3.8.0"
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        showStandardStreams = true
+        showCauses = true
+        showExceptions = true
+        showStackTraces = true
+        exceptionFormat = "full"
+        events "passed", "failed", "skipped"
+    }
 }

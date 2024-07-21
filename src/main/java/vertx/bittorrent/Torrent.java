@@ -27,6 +27,7 @@ public class Torrent {
     private final String name;
     private final long length;
     private final long pieceLength;
+    private final long piecesCount;
 
     private final String comment;
     private final String createdBy;
@@ -52,11 +53,14 @@ public class Torrent {
         ByteBuffer buffer = BEncoder.encode(info.getMap());
         infoHash = digest.digest(buffer.array());
 
-        log.debug("Announce:      {}", announce);
-        log.debug("Length:        {}", length);
-        log.debug("Piece Length:  {}", pieceLength);
-        log.debug("Name:          {}", name);
-        log.debug("Info hash:     {}", getHexEncodedInfoHash());
+        piecesCount = length / pieceLength;
+
+        log.info("Name:          {}", name);
+        log.info("Announce:      {}", announce);
+        log.info("Length:        {}", length);
+        log.info("Piece Length:  {}", pieceLength);
+        log.info("Pieces count:  {}", piecesCount);
+        log.info("Info hash:     {}", getHexEncodedInfoHash());
     }
 
     public String getHexEncodedInfoHash() {

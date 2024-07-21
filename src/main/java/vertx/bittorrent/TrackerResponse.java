@@ -33,8 +33,8 @@ public class TrackerResponse {
         dict.findBytes("peers6").map(TrackerResponse::parsePeers6).ifPresent(peers::addAll);
         interval = dict.requireInt("interval");
 
-        log.debug("Peers:         {}", peers);
-        log.debug("Interval:      {}", interval);
+        log.info("Peers:         {}", peers);
+        log.info("Interval:      {}", interval);
     }
 
     public static TrackerResponse fromBuffer(Buffer buffer) {

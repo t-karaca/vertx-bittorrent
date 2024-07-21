@@ -18,6 +18,10 @@ public class Bitfield {
         bits.set(index);
     }
 
+    public int nextMissingPiece(int fromIndex) {
+        return bits.nextClearBit(fromIndex);
+    }
+
     public int cardinality() {
         return bits.cardinality();
     }

@@ -1,98 +1,256 @@
 package vertx.bittorrent;
 
 import io.vertx.core.Future;
-import io.vertx.core.Vertx;
+import io.vertx.core.Handler;
 import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetSocket;
-import lombok.RequiredArgsConstructor;
+import java.util.HashMap;
+import java.util.Map;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import vertx.bittorrent.PieceState.BlockState;
 import vertx.bittorrent.messages.BitfieldMessage;
 import vertx.bittorrent.messages.ChokeMessage;
 import vertx.bittorrent.messages.HandshakeMessage;
 import vertx.bittorrent.messages.InterestedMessage;
 import vertx.bittorrent.messages.Message;
+import vertx.bittorrent.messages.NotInterestedMessage;
+import vertx.bittorrent.messages.PieceMessage;
 import vertx.bittorrent.messages.RequestMessage;
 import vertx.bittorrent.messages.UnchokeMessage;
 
 @Slf4j
-@RequiredArgsConstructor
 public class PeerConnection {
 
-    private final NetClient netClient;
+    private final NetSocket socket;
     private final ClientState clientState;
+
+    @Getter
     private final Peer peer;
 
     private final ProtocolHandler protocolHandler =
             new ProtocolHandler().setMessageHandler(this::handleProtocolMessage);
 
-    private boolean connecting;
-    private NetSocket socket;
-
+    @Getter
     private Bitfield bitfield;
+
+    @Getter
     private boolean choked = true;
+
+    @Getter
     private boolean interested = false;
 
-    public void reset() {
-        protocolHandler.reset();
+    @Getter
+    private boolean remoteChoked = true;
 
-        choked = true;
-        interested = false;
+    @Getter
+    private boolean remoteInterested = false;
+
+    @Getter
+    private int bytesDownloaded = 0;
+
+    @Getter
+    @Setter
+    private int previousBytesDownloaded = 0;
+
+    @Getter
+    @Setter
+    private float downloadRate = 0.0f;
+
+    private int currentRequestCount = 0;
+    private int requestLimit = 6;
+
+    private Map<Integer, PieceState> pieceStates = new HashMap<>();
+
+    private Handler<Bitfield> bitfieldHandler;
+    private Handler<Void> chokedHandler;
+    private Handler<Void> unchokedHandler;
+    private Handler<Void> interestedHandler;
+    private Handler<Void> notInterestedHandler;
+    private Handler<RequestMessage> requestHandler;
+    private Handler<Integer> pieceHandler;
+
+    private PeerConnection(NetSocket socket, ClientState clientState, Peer peer) {
+        log.debug("Connected to peer at {}", peer);
+
+        this.socket = socket;
+        this.clientState = clientState;
+        this.peer = peer;
+
+        socket.handler(protocolHandler::readBuffer);
+
+        sendMessage(new HandshakeMessage(clientState.getTorrent().getInfoHash(), clientState.getPeerId()));
     }
 
-    public Future<Void> connect() {
-        if (connecting) {
-            return Future.succeededFuture();
-        }
+    public boolean isPieceRequested(int index) {
+        return pieceStates.containsKey(index);
+    }
 
-        connecting = true;
+    public PeerConnection onBitfield(Handler<Bitfield> handler) {
+        bitfieldHandler = handler;
+        return this;
+    }
 
-        log.debug("Trying to connect to peer at {}", peer);
+    public PeerConnection onChoked(Handler<Void> handler) {
+        chokedHandler = handler;
+        return this;
+    }
 
-        return netClient
-                .connect(peer.getPort(), peer.getAddress().getHostAddress())
-                .onFailure(ex -> {
-                    log.error("Could not connect to peer:", ex);
-                    connecting = false;
-                })
-                .onSuccess(socket -> {
-                    log.debug("Connected to peer at {}", peer);
+    public PeerConnection onUnchoked(Handler<Void> handler) {
+        unchokedHandler = handler;
+        return this;
+    }
 
-                    this.socket = socket;
+    public PeerConnection onInterested(Handler<Void> handler) {
+        interestedHandler = handler;
+        return this;
+    }
 
-                    socket.handler(protocolHandler::readBuffer);
+    public PeerConnection onNotInterested(Handler<Void> handler) {
+        notInterestedHandler = handler;
+        return this;
+    }
 
-                    sendMessage(new HandshakeMessage(clientState.getTorrent().getInfoHash(), clientState.getPeerId()));
+    public PeerConnection onRequest(Handler<RequestMessage> handler) {
+        requestHandler = handler;
+        return this;
+    }
 
-                    socket.closeHandler(v -> {
-                        this.socket = null;
-                        connecting = false;
-                    });
-                })
-                .mapEmpty();
+    public PeerConnection onPieceCompleted(Handler<Integer> handler) {
+        pieceHandler = handler;
+        return this;
+    }
+
+    public PeerConnection onClosed(Handler<Void> handler) {
+        socket.closeHandler(handler);
+        return this;
     }
 
     public Future<Void> close() {
-        if (socket == null) {
-            return Future.succeededFuture();
-        }
-
         return socket.close();
     }
 
+    public void choke() {
+        choked = true;
+        sendMessage(new ChokeMessage());
+    }
+
+    public void unchoke() {
+        choked = false;
+        sendMessage(new UnchokeMessage());
+    }
+
+    public void interested() {
+        interested = true;
+        sendMessage(new InterestedMessage());
+    }
+
+    public void notInterested() {
+        interested = false;
+        sendMessage(new NotInterestedMessage());
+    }
+
+    public void requestPiece(int pieceIndex) {
+        if (!pieceStates.containsKey(pieceIndex)) {
+            pieceStates.put(pieceIndex, new PieceState(clientState.getTorrent().getPieceLength()));
+
+            processRequests();
+        }
+    }
+
+    private boolean canRequest() {
+        if (remoteChoked || pieceStates.isEmpty()) {
+            return false;
+        }
+
+        for (var pieceState : pieceStates.values()) {
+            for (int i = 0; i < pieceState.getBlocksCount(); i++) {
+                if (pieceState.getBlockState(i) == BlockState.Queued) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private void processRequests() {
+        while (currentRequestCount < requestLimit && canRequest()) {
+            for (var entry : pieceStates.entrySet()) {
+                int pieceIndex = entry.getKey();
+                var pieceState = entry.getValue();
+
+                for (int i = 0; i < pieceState.getBlocksCount(); i++) {
+                    if (pieceState.getBlockState(i) == BlockState.Queued) {
+                        currentRequestCount++;
+                        pieceState.setBlockState(i, BlockState.Requested);
+                        sendMessage(new RequestMessage(
+                                pieceIndex, pieceState.getBlockOffset(i), ProtocolHandler.MAX_BLOCK_SIZE));
+                    }
+                }
+            }
+        }
+    }
+
     private void handleProtocolMessage(Message message) {
-        log.trace("Received {} from {}", message.getMessageType().name(), peer);
+        log.debug("[{}] Received {}", peer, message.getMessageType().name());
 
         if (message instanceof BitfieldMessage bitfieldMessage) {
-            this.bitfield = bitfieldMessage.getBitfield();
+            bitfield = bitfieldMessage.getBitfield();
 
-            sendMessage(new InterestedMessage());
-            sendMessage(new UnchokeMessage());
+            if (bitfieldHandler != null) {
+                bitfieldHandler.handle(bitfield);
+            }
         } else if (message instanceof ChokeMessage) {
-            choked = true;
-        } else if (message instanceof UnchokeMessage) {
-            choked = false;
+            remoteChoked = true;
 
-            sendMessage(new RequestMessage(100, 0, ProtocolHandler.MAX_BLOCK_SIZE));
+            if (chokedHandler != null) {
+                chokedHandler.handle(null);
+            }
+        } else if (message instanceof UnchokeMessage) {
+            remoteChoked = false;
+
+            if (unchokedHandler != null) {
+                unchokedHandler.handle(null);
+            }
+        } else if (message instanceof InterestedMessage) {
+            remoteInterested = true;
+
+            if (interestedHandler != null) {
+                interestedHandler.handle(null);
+            }
+        } else if (message instanceof NotInterestedMessage) {
+            remoteInterested = false;
+
+            if (notInterestedHandler != null) {
+                notInterestedHandler.handle(null);
+            }
+        } else if (message instanceof RequestMessage requestMessage) {
+            if (requestHandler != null) {
+                requestHandler.handle(requestMessage);
+            }
+        } else if (message instanceof PieceMessage pieceMessage) {
+            bytesDownloaded += pieceMessage.getData().length;
+
+            var pieceState = pieceStates.get(pieceMessage.getPieceIndex());
+            if (pieceState != null) {
+                if (pieceState.getBlockStateByOffset(pieceMessage.getBegin()) == BlockState.Requested) {
+                    // piece was expected
+                    pieceState.setBlockStateByOffset(pieceMessage.getBegin(), BlockState.Downloaded);
+                    currentRequestCount--;
+
+                    if (pieceState.isCompleted()) {
+                        pieceStates.remove(pieceMessage.getPieceIndex());
+
+                        if (pieceHandler != null) {
+                            pieceHandler.handle(pieceMessage.getPieceIndex());
+                        }
+                    }
+                }
+            }
+
+            processRequests();
         }
     }
 
@@ -101,13 +259,15 @@ public class PeerConnection {
             return Future.succeededFuture();
         }
 
-        log.trace("Sending {} to {}", message.getMessageType().name(), peer);
+        log.debug("[{}] Sending {}", peer, message.getMessageType().name());
         return socket.write(message.toBuffer());
     }
 
-    public static PeerConnection create(Vertx vertx, ClientState clientState, Peer peer) {
-        NetClient client = vertx.createNetClient();
+    public static Future<PeerConnection> connect(NetClient client, ClientState clientState, Peer peer) {
+        log.debug("Trying to connect to peer at {}", peer);
 
-        return new PeerConnection(client, clientState, peer);
+        return client.connect(peer.getPort(), peer.getAddress().getHostAddress())
+                .onFailure(ex -> log.error("Could not connect to peer:", ex))
+                .map(socket -> new PeerConnection(socket, clientState, peer));
     }
 }

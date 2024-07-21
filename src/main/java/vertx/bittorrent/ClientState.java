@@ -2,13 +2,19 @@ package vertx.bittorrent;
 
 import java.nio.charset.StandardCharsets;
 import lombok.Getter;
-import lombok.Setter;
 
 @Getter
-@Setter
 public class ClientState {
     private Torrent torrent;
-    private byte[] peerId = generatePeerId();
+    private Bitfield bitfield;
+
+    private final byte[] peerId = generatePeerId();
+
+    public ClientState setTorrent(Torrent torrent) {
+        this.torrent = torrent;
+        this.bitfield = Bitfield.fromSize((int) torrent.getPiecesCount());
+        return this;
+    }
 
     private static byte[] generatePeerId() {
         return "01234567890123456789".getBytes(StandardCharsets.UTF_8);

@@ -59,10 +59,14 @@ public class Bitfield {
     }
 
     public static Bitfield fromBytes(byte[] bytes, int offset, int length) {
-        BitSet bitset = new BitSet((length - offset) * 8);
+        int bitOffset = offset * 8;
+        int bitLength = length * 8;
 
-        for (int i = offset * 8; i < (offset + length) * 8; i++) {
-            if ((bytes[i / 8] & (1 << (7 - i % 8))) > 0) {
+        BitSet bitset = new BitSet(bitLength);
+
+        for (int i = 0; i < bitLength; i++) {
+            int arrayOffset = i + bitOffset;
+            if ((bytes[arrayOffset / 8] & (1 << (7 - arrayOffset % 8))) > 0) {
                 bitset.set(i);
             }
         }

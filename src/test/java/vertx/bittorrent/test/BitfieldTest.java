@@ -2,6 +2,7 @@ package vertx.bittorrent.test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Base64;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import vertx.bittorrent.Bitfield;
@@ -36,6 +37,23 @@ public class BitfieldTest {
         assertThat(bitfield.hasPiece(21)).isFalse();
         assertThat(bitfield.hasPiece(22)).isFalse();
         assertThat(bitfield.hasPiece(23)).isTrue();
+    }
+
+    @Test
+    @DisplayName("should parse bitfield with offset")
+    void bitfieldTestOffset() {
+        Bitfield bitfield = Bitfield.fromBytes(Base64.getDecoder().decode("AAAACwX///////////////8="), 5, 12);
+
+        assertThat(bitfield.hasPiece(0)).isTrue();
+        assertThat(bitfield.hasPiece(1)).isTrue();
+        assertThat(bitfield.hasPiece(2)).isTrue();
+        assertThat(bitfield.hasPiece(3)).isTrue();
+        assertThat(bitfield.hasPiece(4)).isTrue();
+        assertThat(bitfield.hasPiece(5)).isTrue();
+        assertThat(bitfield.hasPiece(6)).isTrue();
+        assertThat(bitfield.hasPiece(7)).isTrue();
+        assertThat(bitfield.hasPiece(8)).isTrue();
+        assertThat(bitfield.hasPiece(59)).isTrue();
     }
 
     @Test

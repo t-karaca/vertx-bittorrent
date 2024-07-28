@@ -7,7 +7,7 @@ import io.vertx.core.file.OpenOptions;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.http.HttpClientRequest;
 import io.vertx.core.http.HttpClientResponse;
-import io.vertx.core.http.HttpMethod;
+import io.vertx.core.http.RequestOptions;
 import io.vertx.core.net.NetClient;
 import java.net.URI;
 import java.util.ArrayList;
@@ -153,21 +153,12 @@ public class ClientVerticle extends AbstractVerticle {
                 .rawQueryParam("uploaded", "0")
                 .rawQueryParam("downloaded", "0")
                 .rawQueryParam("left", String.valueOf(torrent.getLength()))
-                .rawQueryParam("compact", "1")
                 .build();
 
-        int port = uri.getPort();
-
-        if (port == -1) {
-            if ("http".equals(uri.getScheme())) {
-                port = 80;
-            } else if ("https".equals(uri.getScheme())) {
-                port = 443;
-            }
-        }
+        log.info("Tracker URI: {}", uri);
 
         return httpClient
-                .request(HttpMethod.GET, port, uri.getHost(), uri.getRawPath() + "?" + uri.getRawQuery())
+                .request(new RequestOptions().setAbsoluteURI(uri.toString()))
                 .flatMap(HttpClientRequest::send)
                 .flatMap(this::checkResponse)
                 .flatMap(HttpClientResponse::body)

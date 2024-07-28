@@ -31,6 +31,6 @@ public class BitfieldMessage extends Message {
     }
 
     public static BitfieldMessage fromBuffer(ByteBuffer buffer) {
-        return new BitfieldMessage(Bitfield.fromBytes(buffer.array(), buffer.position(), buffer.limit()));
+        return new BitfieldMessage(Bitfield.fromBytes(buffer.array(), buffer.position(), buffer.remaining()));
     }
 }

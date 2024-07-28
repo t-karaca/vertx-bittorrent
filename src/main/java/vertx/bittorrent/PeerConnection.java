@@ -69,6 +69,7 @@ public class PeerConnection {
     private Handler<Void> interestedHandler;
     private Handler<Void> notInterestedHandler;
     private Handler<RequestMessage> requestHandler;
+    private Handler<PieceMessage> blockHandler;
     private Handler<Integer> pieceHandler;
 
     private PeerConnection(NetSocket socket, ClientState clientState, Peer peer) {
@@ -117,6 +118,11 @@ public class PeerConnection {
         return this;
     }
 
+    public PeerConnection onBlockReceived(Handler<PieceMessage> handler) {
+        blockHandler = handler;
+        return this;
+    }
+
     public PeerConnection onPieceCompleted(Handler<Integer> handler) {
         pieceHandler = handler;
         return this;
@@ -153,7 +159,9 @@ public class PeerConnection {
 
     public void requestPiece(int pieceIndex) {
         if (!pieceStates.containsKey(pieceIndex)) {
-            pieceStates.put(pieceIndex, new PieceState(clientState.getTorrent().getPieceLength()));
+            long pieceLength = clientState.getTorrent().getLengthForPiece(pieceIndex);
+
+            pieceStates.put(pieceIndex, new PieceState(pieceLength));
 
             processRequests();
         }
@@ -186,7 +194,8 @@ public class PeerConnection {
                         currentRequestCount++;
                         pieceState.setBlockState(i, BlockState.Requested);
                         sendMessage(new RequestMessage(
-                                pieceIndex, pieceState.getBlockOffset(i), ProtocolHandler.MAX_BLOCK_SIZE));
+                                pieceIndex, pieceState.getBlockOffset(i), pieceState.getBlockSize(i)));
+                        break;
                     }
                 }
             }
@@ -231,7 +240,7 @@ public class PeerConnection {
                 requestHandler.handle(requestMessage);
             }
         } else if (message instanceof PieceMessage pieceMessage) {
-            bytesDownloaded += pieceMessage.getData().length;
+            bytesDownloaded += pieceMessage.getData().length();
 
             var pieceState = pieceStates.get(pieceMessage.getPieceIndex());
             if (pieceState != null) {
@@ -239,6 +248,10 @@ public class PeerConnection {
                     // piece was expected
                     pieceState.setBlockStateByOffset(pieceMessage.getBegin(), BlockState.Downloaded);
                     currentRequestCount--;
+
+                    if (blockHandler != null) {
+                        blockHandler.handle(pieceMessage);
+                    }
 
                     if (pieceState.isCompleted()) {
                         pieceStates.remove(pieceMessage.getPieceIndex());

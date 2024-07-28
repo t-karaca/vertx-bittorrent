@@ -10,9 +10,11 @@ public class PieceState {
         Downloaded
     }
 
+    private final long pieceLength;
     private final BlockState[] blockStates;
 
     public PieceState(long pieceLength) {
+        this.pieceLength = pieceLength;
         int blocksCount = (int) ((pieceLength + ProtocolHandler.MAX_BLOCK_SIZE - 1) / ProtocolHandler.MAX_BLOCK_SIZE);
 
         blockStates = new BlockState[blocksCount];
@@ -44,6 +46,16 @@ public class PieceState {
 
     public int getBlockOffset(int index) {
         return ProtocolHandler.MAX_BLOCK_SIZE * index;
+    }
+
+    public int getBlockSize(int index) {
+        int blockSize = ProtocolHandler.MAX_BLOCK_SIZE;
+
+        if (index == blockStates.length - 1) {
+            blockSize = (int) (pieceLength - index * blockSize);
+        }
+
+        return blockSize;
     }
 
     public boolean isCompleted() {

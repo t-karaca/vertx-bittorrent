@@ -53,7 +53,7 @@ public class Torrent {
         ByteBuffer buffer = BEncoder.encode(info.getMap());
         infoHash = digest.digest(buffer.array());
 
-        piecesCount = length / pieceLength;
+        piecesCount = (int) ((length + pieceLength - 1) / pieceLength);
 
         log.info("Name:          {}", name);
         log.info("Announce:      {}", announce);
@@ -65,6 +65,23 @@ public class Torrent {
 
     public String getHexEncodedInfoHash() {
         return HexFormat.of().formatHex(infoHash);
+    }
+
+    public long getLastPieceLength() {
+        // last piece can be smaller than piece length
+        return length - (piecesCount - 1) * pieceLength;
+    }
+
+    public long getLengthForPiece(int index) {
+        if (index >= piecesCount || index < 0) {
+            throw new IndexOutOfBoundsException(index);
+        }
+
+        if (index == piecesCount - 1) {
+            return getLastPieceLength();
+        }
+
+        return pieceLength;
     }
 
     public static Torrent fromBuffer(Buffer buffer) {

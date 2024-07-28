@@ -2,6 +2,8 @@ package vertx.bittorrent;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
+import io.vertx.core.file.AsyncFile;
+import io.vertx.core.file.OpenOptions;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.http.HttpClientRequest;
 import io.vertx.core.http.HttpClientResponse;
@@ -25,10 +27,18 @@ public class ClientVerticle extends AbstractVerticle {
     private NetClient netClient;
     private HttpClient httpClient;
 
+    private long totalBytesDownloaded = 0L;
+    private long timerId;
+
+    private AsyncFile file;
+
     @Override
     public void start() throws Exception {
         netClient = vertx.createNetClient();
         httpClient = vertx.createHttpClient();
+
+        file = vertx.fileSystem()
+                .openBlocking("testfile.tar.gz", new OpenOptions().setRead(true).setWrite(true));
 
         vertx.fileSystem()
                 .readFile(torrentFileName)
@@ -46,8 +56,30 @@ public class ClientVerticle extends AbstractVerticle {
                                 connection.interested();
                             });
 
+                            connection.onBlockReceived(block -> {
+                                // TODO: validate piece index and begin offset
+
+                                if (block.getData().length() > ProtocolHandler.MAX_BLOCK_SIZE) {
+                                    log.error("Data from received block larger than expected");
+                                    return;
+                                }
+
+                                long offset = clientState.getTorrent().getPieceLength() * block.getPieceIndex()
+                                        + block.getBegin();
+
+                                file.write(block.getData(), offset)
+                                        .onFailure(ex -> log.error("Could not write block to file", ex));
+                            });
+
                             connection.onPieceCompleted(i -> {
                                 clientState.getBitfield().setPiece(i);
+
+                                if (clientState.getBitfield().cardinality()
+                                        == clientState.getTorrent().getPiecesCount()) {
+                                    log.info("Download completed");
+
+                                    vertx.cancelTimer(timerId);
+                                }
 
                                 requestNextPiece(connection);
                             });
@@ -61,14 +93,32 @@ public class ClientVerticle extends AbstractVerticle {
                     }
                 });
 
-        vertx.setPeriodic(1_000, id -> {
+        timerId = vertx.setPeriodic(1_000, id -> {
+            double totalDownloadRate = 0.0f;
+
             for (var connection : connections) {
                 int deltaBytes = connection.getBytesDownloaded() - connection.getPreviousBytesDownloaded();
+
+                totalBytesDownloaded += deltaBytes;
+                totalDownloadRate += deltaBytes;
 
                 connection.setDownloadRate(deltaBytes);
 
                 connection.setPreviousBytesDownloaded(connection.getBytesDownloaded());
             }
+
+            double downloadedRatio =
+                    totalBytesDownloaded / (double) clientState.getTorrent().getLength();
+
+            String progress = String.format("%.02f", downloadedRatio * 100.0);
+
+            log.info(
+                    "Download progress: {}% ({}MB / {}MB) ({}KB/s)",
+                    progress,
+                    // downloadedRatio * 100.0,
+                    totalBytesDownloaded / 1024 / 1024,
+                    clientState.getTorrent().getLength() / 1024 / 1024,
+                    totalDownloadRate / 1024);
         });
     }
 
@@ -78,6 +128,7 @@ public class ClientVerticle extends AbstractVerticle {
                     && connection.getBitfield().hasPiece(i)
                     && !isPieceRequested(i)) {
 
+                log.debug("Requesting piece {} from peer {}", i, connection.getPeer());
                 connection.requestPiece(i);
                 break;
             }

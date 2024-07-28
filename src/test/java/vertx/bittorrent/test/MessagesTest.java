@@ -2,6 +2,7 @@ package vertx.bittorrent.test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.vertx.core.buffer.Buffer;
 import java.nio.ByteBuffer;
 import java.util.Base64;
 import org.junit.jupiter.api.DisplayName;
@@ -107,13 +108,13 @@ public class MessagesTest {
 
         assertThat(message.getPieceIndex()).isEqualTo(2);
         assertThat(message.getBegin()).isEqualTo(4);
-        assertThat(message.getData()).containsExactly(-1, 0, 1);
+        assertThat(message.getData().getBytes()).containsExactly(-1, 0, 1);
     }
 
     @Test
     @DisplayName("should write piece message")
     void writePieceMessageTest() {
-        var message = new PieceMessage(2, 4, new byte[] {-1, 0, 1});
+        var message = new PieceMessage(2, 4, Buffer.buffer(new byte[] {-1, 0, 1}));
 
         byte[] bytes = message.toBuffer().getBytes();
 

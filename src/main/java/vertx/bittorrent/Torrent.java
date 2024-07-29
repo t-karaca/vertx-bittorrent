@@ -8,8 +8,6 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HexFormat;
 import lombok.Getter;
@@ -21,6 +19,8 @@ import lombok.extern.slf4j.Slf4j;
 @ToString
 public class Torrent {
 
+    public static final int DIGEST_LENGTH = 20;
+
     private final String announce;
 
     private final byte[] infoHash;
@@ -28,12 +28,13 @@ public class Torrent {
     private final long length;
     private final long pieceLength;
     private final long piecesCount;
+    private final byte[] pieces;
 
     private final String comment;
     private final String createdBy;
     private final Instant creationDate;
 
-    public Torrent(BEncodedValue value) throws IOException, NoSuchAlgorithmException {
+    public Torrent(BEncodedValue value) throws IOException {
         BEncodedDict dict = new BEncodedDict(value);
 
         announce = dict.requireString("announce");
@@ -48,10 +49,13 @@ public class Torrent {
         length = info.requireLong("length");
         pieceLength = info.requireLong("piece length");
         name = info.findString("name").orElse(null);
+        pieces = info.requireBytes("pieces");
 
-        MessageDigest digest = MessageDigest.getInstance("SHA-1");
-        ByteBuffer buffer = BEncoder.encode(info.getMap());
-        infoHash = digest.digest(buffer.array());
+        if (pieces.length % DIGEST_LENGTH != 0) {
+            log.warn("Field 'pieces' has an invalid count of bytes: {}", pieces.length);
+        }
+
+        infoHash = HashUtils.sha1(BEncoder.encode(info.getMap()));
 
         piecesCount = (int) ((length + pieceLength - 1) / pieceLength);
 
@@ -82,6 +86,14 @@ public class Torrent {
         }
 
         return pieceLength;
+    }
+
+    public ByteBuffer getHashForPiece(int index) {
+        if (index >= piecesCount || index < 0) {
+            throw new IndexOutOfBoundsException(index);
+        }
+
+        return ByteBuffer.wrap(pieces, index * DIGEST_LENGTH, DIGEST_LENGTH);
     }
 
     public static Torrent fromBuffer(Buffer buffer) {

@@ -69,8 +69,7 @@ public class PeerConnection {
     private Handler<Void> interestedHandler;
     private Handler<Void> notInterestedHandler;
     private Handler<RequestMessage> requestHandler;
-    private Handler<PieceMessage> blockHandler;
-    private Handler<Integer> pieceHandler;
+    private Handler<Piece> pieceHandler;
 
     private PeerConnection(NetSocket socket, ClientState clientState, Peer peer) {
         log.debug("Connected to peer at {}", peer);
@@ -118,12 +117,7 @@ public class PeerConnection {
         return this;
     }
 
-    public PeerConnection onBlockReceived(Handler<PieceMessage> handler) {
-        blockHandler = handler;
-        return this;
-    }
-
-    public PeerConnection onPieceCompleted(Handler<Integer> handler) {
+    public PeerConnection onPieceCompleted(Handler<Piece> handler) {
         pieceHandler = handler;
         return this;
     }
@@ -242,22 +236,36 @@ public class PeerConnection {
         } else if (message instanceof PieceMessage pieceMessage) {
             bytesDownloaded += pieceMessage.getData().length();
 
-            var pieceState = pieceStates.get(pieceMessage.getPieceIndex());
+            int pieceIndex = pieceMessage.getPieceIndex();
+            int begin = pieceMessage.getBegin();
+
+            PieceState pieceState = pieceStates.get(pieceIndex);
+
             if (pieceState != null) {
-                if (pieceState.getBlockStateByOffset(pieceMessage.getBegin()) == BlockState.Requested) {
+                if (pieceState.getBlockStateByOffset(begin) == BlockState.Requested) {
                     // piece was expected
-                    pieceState.setBlockStateByOffset(pieceMessage.getBegin(), BlockState.Downloaded);
+
+                    pieceState.getData().setBuffer(begin, pieceMessage.getData());
+
+                    pieceState.setBlockStateByOffset(begin, BlockState.Downloaded);
                     currentRequestCount--;
 
-                    if (blockHandler != null) {
-                        blockHandler.handle(pieceMessage);
-                    }
-
                     if (pieceState.isCompleted()) {
-                        pieceStates.remove(pieceMessage.getPieceIndex());
+                        pieceStates.remove(pieceIndex);
+
+                        byte[] hash = HashUtils.sha1(pieceState.getData());
+                        ByteBuffer pieceHash = clientState.getTorrent().getHashForPiece(pieceIndex);
+                        boolean hashValid = pieceHash.equals(ByteBuffer.wrap(hash));
+
+                        Piece piece = Piece.builder()
+                                .index(pieceIndex)
+                                .data(pieceState.getData())
+                                .hash(hash)
+                                .hashValid(hashValid)
+                                .build();
 
                         if (pieceHandler != null) {
-                            pieceHandler.handle(pieceMessage.getPieceIndex());
+                            pieceHandler.handle(piece);
                         }
                     }
                 }

@@ -78,8 +78,7 @@ public class ProtocolHandler {
                         case BITFIELD -> BitfieldMessage.fromBuffer(input);
                         case REQUEST -> RequestMessage.fromBuffer(input);
                         case PIECE -> PieceMessage.fromBuffer(input);
-                        default -> null; //
-                    };
+                        default -> null;};
                 }
 
                 if (message != null) {

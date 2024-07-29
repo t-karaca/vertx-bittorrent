@@ -1,8 +1,8 @@
 package vertx.bittorrent;
 
+import io.vertx.core.buffer.Buffer;
 import lombok.Getter;
 
-@Getter
 public class PieceState {
     public enum BlockState {
         Queued,
@@ -10,11 +10,17 @@ public class PieceState {
         Downloaded
     }
 
+    @Getter
     private final long pieceLength;
+
+    @Getter
     private final BlockState[] blockStates;
+
+    private Buffer data;
 
     public PieceState(long pieceLength) {
         this.pieceLength = pieceLength;
+
         int blocksCount = (int) ((pieceLength + ProtocolHandler.MAX_BLOCK_SIZE - 1) / ProtocolHandler.MAX_BLOCK_SIZE);
 
         blockStates = new BlockState[blocksCount];
@@ -22,6 +28,15 @@ public class PieceState {
         for (int i = 0; i < blocksCount; i++) {
             blockStates[i] = BlockState.Queued;
         }
+    }
+
+    public Buffer getData() {
+        if (data == null) {
+            // lazy allocation
+            data = Buffer.buffer((int) pieceLength);
+        }
+
+        return data;
     }
 
     public int getBlocksCount() {

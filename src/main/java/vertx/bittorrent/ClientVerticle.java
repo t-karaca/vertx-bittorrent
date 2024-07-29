@@ -11,7 +11,9 @@ import io.vertx.core.http.RequestOptions;
 import io.vertx.core.net.NetClient;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,13 +34,12 @@ public class ClientVerticle extends AbstractVerticle {
 
     private AsyncFile file;
 
+    private Set<Integer> processingPieces = new HashSet<>();
+
     @Override
     public void start() throws Exception {
         netClient = vertx.createNetClient();
         httpClient = vertx.createHttpClient();
-
-        file = vertx.fileSystem()
-                .openBlocking("testfile.tar.gz", new OpenOptions().setRead(true).setWrite(true));
 
         vertx.fileSystem()
                 .readFile(torrentFileName)
@@ -46,51 +47,13 @@ public class ClientVerticle extends AbstractVerticle {
                 .map(Torrent::fromBuffer)
                 .onFailure(e -> log.error("Error parsing torrent info:", e))
                 .onSuccess(clientState::setTorrent)
-                .flatMap(this::announceToTracker)
-                .onSuccess(response -> {
-                    for (Peer peer : response.getPeers()) {
-                        PeerConnection.connect(netClient, clientState, peer).onSuccess(connection -> {
-                            connections.add(connection);
-
-                            connection.onBitfield(bitfield -> {
-                                connection.interested();
-                            });
-
-                            connection.onBlockReceived(block -> {
-                                // TODO: validate piece index and begin offset
-
-                                if (block.getData().length() > ProtocolHandler.MAX_BLOCK_SIZE) {
-                                    log.error("Data from received block larger than expected");
-                                    return;
-                                }
-
-                                long offset = clientState.getTorrent().getPieceLength() * block.getPieceIndex()
-                                        + block.getBegin();
-
-                                file.write(block.getData(), offset)
-                                        .onFailure(ex -> log.error("Could not write block to file", ex));
-                            });
-
-                            connection.onPieceCompleted(i -> {
-                                clientState.getBitfield().setPiece(i);
-
-                                if (clientState.getBitfield().cardinality()
-                                        == clientState.getTorrent().getPiecesCount()) {
-                                    log.info("Download completed");
-
-                                    vertx.cancelTimer(timerId);
-                                }
-
-                                requestNextPiece(connection);
-                            });
-
-                            connection.onUnchoked(v -> {
-                                requestNextPiece(connection);
-                            });
-
-                            connection.onClosed(v -> connections.remove(connection));
-                        });
-                    }
+                .onSuccess(this::openFile)
+                .onSuccess(torrent -> {
+                    announceToTracker(torrent).onSuccess(response -> {
+                        for (Peer peer : response.getPeers()) {
+                            connectToPeer(peer);
+                        }
+                    });
                 });
 
         timerId = vertx.setPeriodic(1_000, id -> {
@@ -126,6 +89,7 @@ public class ClientVerticle extends AbstractVerticle {
         for (int i = 0; i < clientState.getTorrent().getPiecesCount(); i++) {
             if (!clientState.getBitfield().hasPiece(i)
                     && connection.getBitfield().hasPiece(i)
+                    && !isProcessingPiece(i)
                     && !isPieceRequested(i)) {
 
                 log.debug("Requesting piece {} from peer {}", i, connection.getPeer());
@@ -133,6 +97,10 @@ public class ClientVerticle extends AbstractVerticle {
                 break;
             }
         }
+    }
+
+    private boolean isProcessingPiece(int pieceIndex) {
+        return processingPieces.contains(pieceIndex);
     }
 
     private boolean isPieceRequested(int pieceIndex) {
@@ -175,5 +143,64 @@ public class ClientVerticle extends AbstractVerticle {
         } else {
             return Future.succeededFuture(response);
         }
+    }
+
+    private void openFile(Torrent torrent) {
+        file = vertx.fileSystem()
+                .openBlocking(torrent.getName(), new OpenOptions().setRead(true).setWrite(true));
+    }
+
+    private Future<PeerConnection> connectToPeer(Peer peer) {
+        for (var connection : connections) {
+            if (peer.equals(connection.getPeer())) {
+                return Future.succeededFuture(connection);
+            }
+        }
+
+        return PeerConnection.connect(netClient, clientState, peer).onSuccess(connection -> {
+            connections.add(connection);
+
+            connection.onBitfield(bitfield -> {
+                connection.interested();
+            });
+
+            connection.onPieceCompleted(piece -> {
+                if (piece.isHashValid()) {
+                    processingPieces.add(piece.getIndex());
+
+                    long offset = clientState.getTorrent().getPieceLength() * piece.getIndex();
+
+                    file.write(piece.getData(), offset)
+                            .onFailure(ex -> {
+                                log.error("Could not write piece to file", ex);
+                                processingPieces.remove(piece.getIndex());
+                                requestNextPiece(connection);
+                            })
+                            .onSuccess(v -> {
+                                processingPieces.remove(piece.getIndex());
+
+                                clientState.getBitfield().setPiece(piece.getIndex());
+
+                                if (clientState.getBitfield().cardinality()
+                                        == clientState.getTorrent().getPiecesCount()) {
+                                    log.info("Download completed");
+
+                                    vertx.cancelTimer(timerId);
+                                } else {
+                                    requestNextPiece(connection);
+                                }
+                            });
+                } else {
+                    log.warn("Received invalid piece for index: {}", piece.getIndex());
+                    requestNextPiece(connection);
+                }
+            });
+
+            connection.onUnchoked(v -> {
+                requestNextPiece(connection);
+            });
+
+            connection.onClosed(v -> connections.remove(connection));
+        });
     }
 }

@@ -16,8 +16,8 @@ import vertx.bittorrent.TrackerResponse;
 
 public class TorrentTest {
     @Test
-    @DisplayName("should parse torrent file")
-    void test() {
+    @DisplayName("should parse single file torrent")
+    void testSingleFileTorrent() {
         var vertx = Vertx.vertx();
         Buffer buffer = vertx.fileSystem().readFileBlocking("src/test/resources/bash-5.2.21.tar.gz.torrent");
         Torrent torrent = Torrent.fromBuffer(buffer);
@@ -29,6 +29,26 @@ public class TorrentTest {
         assertThat(torrent.getPieceLength()).isEqualTo(262144);
         assertThat(torrent.getPiecesCount()).isEqualTo(42);
         assertThat(torrent.getHexEncodedInfoHash()).isEqualTo("87cb62630d6c0f32d152817e40bb5c33cc9d9e62");
+        assertThat(torrent.isSingleFile()).isTrue();
+        assertThat(torrent.isMultiFile()).isFalse();
+    }
+
+    @Test
+    @DisplayName("should parse multi file torrent")
+    void testMultiFileTorrent() {
+        var vertx = Vertx.vertx();
+        Buffer buffer = vertx.fileSystem().readFileBlocking("src/test/resources/multifile-test.torrent");
+        Torrent torrent = Torrent.fromBuffer(buffer);
+
+        assertThat(torrent.getAnnounce()).isEqualTo("http://localhost:6969/announce");
+        assertThat(torrent.getName()).isEqualTo("multifile-test");
+        assertThat(torrent.getCreatedBy()).isEqualTo("mktorrent 1.1");
+        assertThat(torrent.getLength()).isEqualTo(17997612);
+        assertThat(torrent.getPieceLength()).isEqualTo(262144);
+        assertThat(torrent.getPiecesCount()).isEqualTo(69);
+        assertThat(torrent.getHexEncodedInfoHash()).isEqualTo("0100dfc0787571978b5e7691f4415d446d782476");
+        assertThat(torrent.isSingleFile()).isFalse();
+        assertThat(torrent.isMultiFile()).isTrue();
     }
 
     @Test

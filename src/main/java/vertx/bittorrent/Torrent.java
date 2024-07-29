@@ -2,14 +2,15 @@ package vertx.bittorrent;
 
 import be.adaxisoft.bencode.BDecoder;
 import be.adaxisoft.bencode.BEncodedValue;
-import be.adaxisoft.bencode.BEncoder;
 import io.vertx.core.buffer.Buffer;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.List;
 import lombok.Getter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +31,8 @@ public class Torrent {
     private final long piecesCount;
     private final byte[] pieces;
 
+    private final List<FileInfo> files = new ArrayList<>();
+
     private final String comment;
     private final String createdBy;
     private final Instant creationDate;
@@ -46,16 +49,28 @@ public class Torrent {
 
         BEncodedDict info = dict.requireDict("info");
 
-        length = info.requireLong("length");
+        name = info.requireString("name");
         pieceLength = info.requireLong("piece length");
-        name = info.findString("name").orElse(null);
         pieces = info.requireBytes("pieces");
 
         if (pieces.length % DIGEST_LENGTH != 0) {
             log.warn("Field 'pieces' has an invalid count of bytes: {}", pieces.length);
         }
 
-        infoHash = HashUtils.sha1(BEncoder.encode(info.getMap()));
+        info.findList("files").ifPresent(list -> list.stream()
+                .map(BEncodedDict::from)
+                .map(d -> FileInfo.fromDict(name, d))
+                .forEach(files::add));
+
+        if (files.isEmpty()) {
+            length = info.requireLong("length");
+
+            files.add(new FileInfo(name, length));
+        } else {
+            length = files.stream().reduce(0L, (total, fileInfo) -> total + fileInfo.getLength(), (a, b) -> a + b);
+        }
+
+        infoHash = HashUtils.sha1(info.encode());
 
         piecesCount = (int) ((length + pieceLength - 1) / pieceLength);
 
@@ -65,6 +80,15 @@ public class Torrent {
         log.info("Piece Length:  {}", pieceLength);
         log.info("Pieces count:  {}", piecesCount);
         log.info("Info hash:     {}", getHexEncodedInfoHash());
+        log.info("Files:         {}", files);
+    }
+
+    public boolean isSingleFile() {
+        return files.size() == 1;
+    }
+
+    public boolean isMultiFile() {
+        return files.size() > 1;
     }
 
     public String getHexEncodedInfoHash() {

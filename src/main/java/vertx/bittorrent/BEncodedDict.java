@@ -1,7 +1,11 @@
 package vertx.bittorrent;
 
 import be.adaxisoft.bencode.BEncodedValue;
+import be.adaxisoft.bencode.BEncoder;
 import be.adaxisoft.bencode.InvalidBEncodingException;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -102,6 +106,14 @@ public class BEncodedDict {
 
     public byte[] requireBytes(String key) {
         return findBytes(key).orElseThrow(() -> missingFieldException(key));
+    }
+
+    public ByteBuffer encode() {
+        try {
+            return BEncoder.encode(map);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private IllegalArgumentException missingFieldException(String key) {

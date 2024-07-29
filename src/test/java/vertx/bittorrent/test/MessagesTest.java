@@ -90,7 +90,7 @@ public class MessagesTest {
     }
 
     @Test
-    @DisplayName("should write piece message")
+    @DisplayName("should write request message")
     void writeRequestMessageTest() {
         var message = new RequestMessage(2, 4, 3);
 

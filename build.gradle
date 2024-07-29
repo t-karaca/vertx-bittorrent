@@ -37,6 +37,7 @@ dependencies {
     implementation "io.vertx:vertx-config:${vertxVersion}"
     implementation "io.vertx:vertx-config-yaml:${vertxVersion}"
 
+    implementation "org.apache.commons:commons-lang3:3.15.0"
     implementation "be.adaxisoft:Bencode:2.0.0"
 
     testImplementation "org.junit.jupiter:junit-jupiter:5.10.3"

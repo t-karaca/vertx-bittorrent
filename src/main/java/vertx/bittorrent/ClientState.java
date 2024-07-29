@@ -1,7 +1,9 @@
 package vertx.bittorrent;
 
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import lombok.Getter;
+import org.apache.commons.lang3.ArrayUtils;
 
 @Getter
 public class ClientState {
@@ -17,6 +19,12 @@ public class ClientState {
     }
 
     private static byte[] generatePeerId() {
-        return "01234567890123456789".getBytes(StandardCharsets.UTF_8);
+        byte[] prefixBytes = "-VB1000-".getBytes(StandardCharsets.UTF_8);
+
+        SecureRandom random = new SecureRandom();
+        byte[] bytes = new byte[12];
+        random.nextBytes(bytes);
+
+        return ArrayUtils.addAll(prefixBytes, bytes);
     }
 }

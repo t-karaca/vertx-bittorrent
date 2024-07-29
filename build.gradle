@@ -1,7 +1,6 @@
 plugins {
     id "java"
-
-    id "com.github.johnrengelman.shadow" version "8.1.1"
+    id "application"
 
     id "io.freefair.lombok" version "6.6.3"
     id "com.diffplug.spotless" version "6.21.0"
@@ -9,10 +8,8 @@ plugins {
 
 sourceCompatibility = 17
 
-jar {
-    manifest {
-        attributes "Main-Class": "vertx.bittorrent.ClientApplication"
-    }
+application {
+    mainClass = "vertx.bittorrent.ClientApplication"
 }
 
 lombok {
@@ -33,9 +30,8 @@ repositories {
 }
 
 dependencies {
-    implementation "org.slf4j:slf4j-api:1.7.36"
-    implementation "ch.qos.logback:logback-core:1.4.8"
-    implementation "ch.qos.logback:logback-classic:1.4.8"
+    implementation "ch.qos.logback:logback-core:${logbackVersion}"
+    implementation "ch.qos.logback:logback-classic:${logbackVersion}"
 
     implementation "io.vertx:vertx-core:${vertxVersion}"
     implementation "io.vertx:vertx-config:${vertxVersion}"

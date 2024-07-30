@@ -2,23 +2,15 @@ package vertx.bittorrent;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
-import io.vertx.core.file.AsyncFile;
-import io.vertx.core.file.OpenOptions;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.http.HttpClientRequest;
 import io.vertx.core.http.HttpClientResponse;
 import io.vertx.core.http.RequestOptions;
 import io.vertx.core.net.NetClient;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,21 +21,21 @@ public class ClientVerticle extends AbstractVerticle {
 
     private final String torrentFileName;
 
-    private final ClientState clientState = new ClientState();
     private final List<PeerConnection> connections = new ArrayList<>();
 
+    private ClientState clientState;
     private NetClient netClient;
     private HttpClient httpClient;
 
     private long totalBytesDownloaded = 0L;
     private long timerId;
 
-    private Map<String, AsyncFile> fileMap = new HashMap<>();
-
     private Set<Integer> processingPieces = new HashSet<>();
 
     @Override
     public void start() throws Exception {
+        clientState = new ClientState(vertx);
+
         netClient = vertx.createNetClient();
         httpClient = vertx.createHttpClient();
 
@@ -150,41 +142,6 @@ public class ClientVerticle extends AbstractVerticle {
         }
     }
 
-    private Future<Void> writePieceToFile(Piece piece) {
-        int processedBytes = 0;
-        int pieceLength = piece.getData().length();
-
-        List<Future<Void>> futures = new ArrayList<>();
-
-        while (processedBytes < pieceLength) {
-            FilePosition position = clientState.getTorrent().getFilePositionForBlock(piece.getIndex(), processedBytes);
-
-            AsyncFile file = fileMap.computeIfAbsent(position.getFileInfo().getPath(), path -> {
-                try {
-                    Path parent = Path.of(path).getParent();
-                    if (parent != null) {
-                        Files.createDirectories(parent);
-                    }
-
-                    return vertx.fileSystem()
-                            .openBlocking(path, new OpenOptions().setRead(true).setWrite(true));
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
-
-            int bytesToWrite = (int)
-                    Math.min(position.getFileInfo().getLength() - position.getOffset(), pieceLength - processedBytes);
-
-            futures.add(file.write(
-                    piece.getData().slice(processedBytes, processedBytes + bytesToWrite), position.getOffset()));
-
-            processedBytes += bytesToWrite;
-        }
-
-        return Future.all(futures).mapEmpty();
-    }
-
     private Future<PeerConnection> connectToPeer(Peer peer) {
         for (var connection : connections) {
             if (peer.equals(connection.getPeer())) {
@@ -203,7 +160,8 @@ public class ClientVerticle extends AbstractVerticle {
                 if (piece.isHashValid()) {
                     processingPieces.add(piece.getIndex());
 
-                    writePieceToFile(piece)
+                    clientState
+                            .writePieceToDisk(piece)
                             .onFailure(ex -> {
                                 log.error("Could not write piece to file", ex);
                                 processingPieces.remove(piece.getIndex());

@@ -31,6 +31,25 @@ public class TorrentTest {
         assertThat(torrent.getHexEncodedInfoHash()).isEqualTo("87cb62630d6c0f32d152817e40bb5c33cc9d9e62");
         assertThat(torrent.isSingleFile()).isTrue();
         assertThat(torrent.isMultiFile()).isFalse();
+
+        assertThat(torrent.getFilePositionForBlock(0, 0))
+                .isNotNull()
+                .extracting(t -> t.getFileIndex())
+                .isEqualTo(0);
+
+        assertThat(torrent.getFilePositionForBlock(41, 0))
+                .isNotNull()
+                .extracting(t -> t.getFileIndex())
+                .isEqualTo(0);
+
+        assertThat(torrent.getFilePositionForBlock(41, 200000))
+                .isNotNull()
+                .extracting(t -> t.getFileIndex())
+                .isEqualTo(0);
+
+        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForBlock(-1, 0));
+        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForBlock(41, 210000));
+        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForBlock(42, 0));
     }
 
     @Test
@@ -49,6 +68,41 @@ public class TorrentTest {
         assertThat(torrent.getHexEncodedInfoHash()).isEqualTo("0100dfc0787571978b5e7691f4415d446d782476");
         assertThat(torrent.isSingleFile()).isFalse();
         assertThat(torrent.isMultiFile()).isTrue();
+
+        assertThat(torrent.getFilePositionForBlock(0, 0))
+                .isNotNull()
+                .extracting(t -> t.getFileIndex())
+                .isEqualTo(0);
+
+        assertThat(torrent.getFilePositionForBlock(0, 500))
+                .isNotNull()
+                .extracting(t -> t.getFileIndex())
+                .isEqualTo(0);
+
+        assertThat(torrent.getFilePositionForBlock(0, 16384))
+                .isNotNull()
+                .extracting(t -> t.getFileIndex())
+                .isEqualTo(1);
+
+        assertThat(torrent.getFilePositionForBlock(1, 0))
+                .isNotNull()
+                .extracting(t -> t.getFileIndex())
+                .isEqualTo(1);
+
+        assertThat(torrent.getFilePositionForBlock(68, 0))
+                .isNotNull()
+                .extracting(t -> t.getFileIndex())
+                .isEqualTo(2);
+
+        assertThat(torrent.getFilePositionForBlock(68, 170000))
+                .isNotNull()
+                .extracting(t -> t.getFileIndex())
+                .isEqualTo(2);
+
+        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForBlock(-1, 0));
+        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForBlock(68, 172000));
+        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForBlock(69, 0));
+        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForBlock(70, 0));
     }
 
     @Test

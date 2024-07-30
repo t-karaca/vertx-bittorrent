@@ -120,6 +120,37 @@ public class Torrent {
         return ByteBuffer.wrap(pieces, index * DIGEST_LENGTH, DIGEST_LENGTH);
     }
 
+    public FilePosition getFilePositionForBlock(int pieceIndex, int pieceOffset) {
+        long offset = pieceIndex * pieceLength + pieceOffset;
+
+        if (offset < 0) {
+            throw new IndexOutOfBoundsException(
+                    "position for index " + pieceIndex + " with offset " + pieceOffset + " must not be negative");
+        }
+
+        if (offset >= length) {
+            throw new IndexOutOfBoundsException(
+                    "position for index " + pieceIndex + " with offset " + pieceOffset + " must be < " + length);
+        }
+
+        long fileOffset = 0;
+        for (int i = 0; i < files.size(); i++) {
+            FileInfo file = files.get(i);
+
+            if (offset - fileOffset < file.getLength()) {
+                return FilePosition.builder()
+                        .fileIndex(i)
+                        .fileInfo(file)
+                        .offset(offset - fileOffset)
+                        .build();
+            } else {
+                fileOffset += file.getLength();
+            }
+        }
+
+        return null;
+    }
+
     public static Torrent fromBuffer(Buffer buffer) {
         try (var is = new ByteArrayInputStream(buffer.getBytes())) {
             return fromInputStream(is);

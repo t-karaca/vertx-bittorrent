@@ -2,14 +2,10 @@ package vertx.bittorrent;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.file.FileSystem;
-import io.vertx.core.http.HttpClient;
-import io.vertx.core.http.HttpClientRequest;
-import io.vertx.core.http.HttpClientResponse;
-import io.vertx.core.http.RequestOptions;
 import io.vertx.core.net.NetClient;
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -27,10 +23,9 @@ public class ClientVerticle extends AbstractVerticle {
     private final Set<Integer> processingPieces = new HashSet<>();
 
     private ClientState clientState;
+    private Tracker tracker;
     private NetClient netClient;
-    private HttpClient httpClient;
 
-    private long totalBytesDownloaded = 0L;
     private long timerId;
 
     @Override
@@ -48,16 +43,18 @@ public class ClientVerticle extends AbstractVerticle {
         Torrent torrent = Torrent.fromBuffer(torrentBuffer);
 
         clientState = new ClientState(vertx, torrent);
+        tracker = new Tracker(vertx, clientState);
+
+        tracker.onPeersReceived(peers -> {
+            for (Peer peer : peers) {
+                connectToPeer(peer);
+            }
+        });
 
         netClient = vertx.createNetClient();
-        httpClient = vertx.createHttpClient();
 
         clientState.checkPiecesOnDisk().onSuccess(v -> {
-            announceToTracker(torrent).onSuccess(response -> {
-                for (Peer peer : response.getPeers()) {
-                    connectToPeer(peer);
-                }
-            });
+            tracker.announce();
         });
 
         timerId = vertx.setPeriodic(1_000, id -> {
@@ -66,7 +63,8 @@ public class ClientVerticle extends AbstractVerticle {
             for (var connection : connections) {
                 int deltaBytes = connection.getBytesDownloaded() - connection.getPreviousBytesDownloaded();
 
-                totalBytesDownloaded += deltaBytes;
+                clientState.addTotalBytesDownloaded(deltaBytes);
+
                 totalDownloadRate += deltaBytes;
 
                 connection.setDownloadRate(deltaBytes);
@@ -74,18 +72,28 @@ public class ClientVerticle extends AbstractVerticle {
                 connection.setPreviousBytesDownloaded(connection.getBytesDownloaded());
             }
 
+            long completedBytes = clientState.getCompletedBytes();
             double downloadedRatio =
-                    totalBytesDownloaded / (double) clientState.getTorrent().getLength();
+                    completedBytes / (double) clientState.getTorrent().getLength();
 
             String progress = String.format("%.02f", downloadedRatio * 100.0);
 
             log.info(
                     "Download progress: {}% ({} / {}) ({}/s)",
                     progress,
-                    ByteFormat.format(totalBytesDownloaded),
+                    ByteFormat.format(completedBytes),
                     ByteFormat.format(clientState.getTorrent().getLength()),
                     ByteFormat.format(totalDownloadRate));
         });
+    }
+
+    @Override
+    public void stop(Promise<Void> stopPromise) throws Exception {
+        log.info("Shutting down client");
+
+        vertx.cancelTimer(timerId);
+
+        tracker.close().onComplete(ar -> stopPromise.complete());
     }
 
     private void requestNextPiece(PeerConnection connection) {
@@ -114,38 +122,6 @@ public class ClientVerticle extends AbstractVerticle {
         }
 
         return false;
-    }
-
-    private Future<TrackerResponse> announceToTracker(Torrent torrent) {
-        URI uri = UriBuilder.fromUriString(torrent.getAnnounce())
-                .queryParam("info_hash", torrent.getInfoHash())
-                .rawQueryParam("port", "12345")
-                .queryParam("peer_id", clientState.getPeerId())
-                .rawQueryParam("uploaded", "0")
-                .rawQueryParam("downloaded", "0")
-                .rawQueryParam("left", String.valueOf(torrent.getLength()))
-                .build();
-
-        log.info("Tracker URI: {}", uri);
-
-        return httpClient
-                .request(new RequestOptions().setAbsoluteURI(uri.toString()))
-                .flatMap(HttpClientRequest::send)
-                .flatMap(this::checkResponse)
-                .flatMap(HttpClientResponse::body)
-                .map(TrackerResponse::fromBuffer)
-                .onFailure(e -> log.error("Error while requesting from tracker:", e));
-    }
-
-    private Future<HttpClientResponse> checkResponse(HttpClientResponse response) {
-        if (response.statusCode() >= 400) {
-            return response.body()
-                    .map(buffer -> buffer.getString(0, buffer.length()))
-                    .flatMap(value -> Future.failedFuture(
-                            new Exception("Request failed with status " + response.statusCode() + ": " + value)));
-        } else {
-            return Future.succeededFuture(response);
-        }
     }
 
     private Future<PeerConnection> connectToPeer(Peer peer) {
@@ -182,6 +158,7 @@ public class ClientVerticle extends AbstractVerticle {
                                     log.info("Download completed");
 
                                     vertx.cancelTimer(timerId);
+                                    tracker.completed();
                                 } else {
                                     requestNextPiece(connection);
                                 }

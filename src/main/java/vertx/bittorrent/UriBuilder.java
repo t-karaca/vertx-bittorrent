@@ -1,6 +1,8 @@
 package vertx.bittorrent;
 
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 public class UriBuilder {
 
@@ -13,14 +15,7 @@ public class UriBuilder {
     }
 
     public UriBuilder queryParam(String param, byte[] value) {
-        if (!hasQueryParams) {
-            builder.append('?');
-        } else {
-            builder.append('&');
-        }
-
-        builder.append(param);
-        builder.append('=');
+        appendQueryParamKey(param);
 
         for (byte b : value) {
             if (b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9') {
@@ -30,12 +25,34 @@ public class UriBuilder {
             }
         }
 
-        hasQueryParams = true;
+        return this;
+    }
+
+    public UriBuilder queryParam(String param, String value) {
+        appendQueryParamKey(param);
+
+        builder.append(URLEncoder.encode(value, StandardCharsets.UTF_8));
 
         return this;
     }
 
     public UriBuilder rawQueryParam(String param, String value) {
+        appendQueryParamKey(param);
+
+        builder.append(value);
+
+        return this;
+    }
+
+    public UriBuilder queryParam(String param, long value) {
+        appendQueryParamKey(param);
+
+        builder.append(value);
+
+        return this;
+    }
+
+    private void appendQueryParamKey(String param) {
         if (!hasQueryParams) {
             builder.append('?');
         } else {
@@ -44,11 +61,8 @@ public class UriBuilder {
 
         builder.append(param);
         builder.append('=');
-        builder.append(value);
 
         hasQueryParams = true;
-
-        return this;
     }
 
     public static UriBuilder fromUriString(String uriString) {

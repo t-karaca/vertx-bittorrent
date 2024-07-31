@@ -20,6 +20,7 @@ import org.apache.commons.lang3.ArrayUtils;
 @Slf4j
 public class ClientState {
     private final Vertx vertx;
+    private final Map<String, AsyncFile> fileMap = new HashMap<>();
 
     @Getter
     private final Torrent torrent;
@@ -30,7 +31,11 @@ public class ClientState {
     @Getter
     private final byte[] peerId = generatePeerId();
 
-    private final Map<String, AsyncFile> fileMap = new HashMap<>();
+    @Getter
+    private long totalBytesDownloaded = 0L;
+
+    @Getter
+    private long totalBytesUploaded = 0L;
 
     public ClientState(Vertx vertx, Torrent torrent) {
         this.vertx = vertx;
@@ -50,6 +55,30 @@ public class ClientState {
 
             fileMap.put(file.getPath(), asyncFile);
         }
+    }
+
+    public void addTotalBytesDownloaded(long bytes) {
+        totalBytesDownloaded += bytes;
+    }
+
+    public void addTotalBytesUploaded(long bytes) {
+        totalBytesUploaded += bytes;
+    }
+
+    public long getCompletedBytes() {
+        long completed = 0;
+
+        for (int i = 0; i < torrent.getPiecesCount(); i++) {
+            if (bitfield.hasPiece(i)) {
+                completed += torrent.getLengthForPiece(i);
+            }
+        }
+
+        return completed;
+    }
+
+    public long getRemainingBytes() {
+        return torrent.getLength() - getCompletedBytes();
     }
 
     public boolean isTorrentComplete() {

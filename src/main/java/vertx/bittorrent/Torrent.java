@@ -87,7 +87,7 @@ public class Torrent {
         log.info("Files:");
 
         for (var file : files) {
-            log.info("    {} ({} Bytes)", file.getPath(), file.getLength());
+            log.info("    {} ({})", file.getPath(), ByteFormat.format(file.getLength()));
         }
     }
 

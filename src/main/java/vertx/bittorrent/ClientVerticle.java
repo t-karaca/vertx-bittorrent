@@ -80,12 +80,11 @@ public class ClientVerticle extends AbstractVerticle {
             String progress = String.format("%.02f", downloadedRatio * 100.0);
 
             log.info(
-                    "Download progress: {}% ({}MB / {}MB) ({}KB/s)",
+                    "Download progress: {}% ({} / {}) ({}/s)",
                     progress,
-                    // downloadedRatio * 100.0,
-                    totalBytesDownloaded / 1024 / 1024,
-                    clientState.getTorrent().getLength() / 1024 / 1024,
-                    totalDownloadRate / 1024);
+                    ByteFormat.format(totalBytesDownloaded),
+                    ByteFormat.format(clientState.getTorrent().getLength()),
+                    ByteFormat.format(totalDownloadRate));
         });
     }
 

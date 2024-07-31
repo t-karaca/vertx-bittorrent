@@ -4,6 +4,7 @@ import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetSocket;
+import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.Getter;
@@ -255,7 +256,7 @@ public class PeerConnection {
 
                         byte[] hash = HashUtils.sha1(pieceState.getData());
                         ByteBuffer pieceHash = clientState.getTorrent().getHashForPiece(pieceIndex);
-                        boolean hashValid = pieceHash.equals(ByteBuffer.wrap(hash));
+                        boolean hashValid = HashUtils.isEqual(hash, pieceHash);
 
                         Piece piece = Piece.builder()
                                 .index(pieceIndex)

@@ -4,6 +4,7 @@ import io.vertx.core.buffer.Buffer;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 
 public final class HashUtils {
     private HashUtils() {}
@@ -30,5 +31,17 @@ public final class HashUtils {
     public static byte[] sha1(Buffer buffer) {
         MessageDigest digest = getSha1();
         return digest.digest(buffer.getBytes());
+    }
+
+    public static boolean isEqual(byte[] data, byte[] otherData) {
+        return Arrays.equals(data, otherData);
+    }
+
+    public static boolean isEqual(ByteBuffer data, byte[] otherData) {
+        return data.equals(ByteBuffer.wrap(otherData));
+    }
+
+    public static boolean isEqual(byte[] data, ByteBuffer otherData) {
+        return isEqual(otherData, data);
     }
 }

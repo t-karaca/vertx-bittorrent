@@ -32,24 +32,24 @@ public class TorrentTest {
         assertThat(torrent.isSingleFile()).isTrue();
         assertThat(torrent.isMultiFile()).isFalse();
 
-        assertThat(torrent.getFilePositionForBlock(0, 0))
+        assertThat(torrent.getFilePositionForPiece(0, 0))
                 .isNotNull()
                 .extracting(t -> t.getFileIndex())
                 .isEqualTo(0);
 
-        assertThat(torrent.getFilePositionForBlock(41, 0))
+        assertThat(torrent.getFilePositionForPiece(41, 0))
                 .isNotNull()
                 .extracting(t -> t.getFileIndex())
                 .isEqualTo(0);
 
-        assertThat(torrent.getFilePositionForBlock(41, 200000))
+        assertThat(torrent.getFilePositionForPiece(41, 200000))
                 .isNotNull()
                 .extracting(t -> t.getFileIndex())
                 .isEqualTo(0);
 
-        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForBlock(-1, 0));
-        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForBlock(41, 210000));
-        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForBlock(42, 0));
+        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForPiece(-1, 0));
+        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForPiece(41, 210000));
+        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForPiece(42, 0));
     }
 
     @Test
@@ -69,40 +69,40 @@ public class TorrentTest {
         assertThat(torrent.isSingleFile()).isFalse();
         assertThat(torrent.isMultiFile()).isTrue();
 
-        assertThat(torrent.getFilePositionForBlock(0, 0))
+        assertThat(torrent.getFilePositionForPiece(0, 0))
                 .isNotNull()
                 .extracting(t -> t.getFileIndex())
                 .isEqualTo(0);
 
-        assertThat(torrent.getFilePositionForBlock(0, 500))
+        assertThat(torrent.getFilePositionForPiece(0, 500))
                 .isNotNull()
                 .extracting(t -> t.getFileIndex())
                 .isEqualTo(0);
 
-        assertThat(torrent.getFilePositionForBlock(0, 16384))
+        assertThat(torrent.getFilePositionForPiece(0, 16384))
                 .isNotNull()
                 .extracting(t -> t.getFileIndex())
                 .isEqualTo(1);
 
-        assertThat(torrent.getFilePositionForBlock(1, 0))
+        assertThat(torrent.getFilePositionForPiece(1, 0))
                 .isNotNull()
                 .extracting(t -> t.getFileIndex())
                 .isEqualTo(1);
 
-        assertThat(torrent.getFilePositionForBlock(68, 0))
+        assertThat(torrent.getFilePositionForPiece(68, 0))
                 .isNotNull()
                 .extracting(t -> t.getFileIndex())
                 .isEqualTo(2);
 
-        assertThat(torrent.getFilePositionForBlock(68, 170000))
+        assertThat(torrent.getFilePositionForPiece(68, 170000))
                 .isNotNull()
                 .extracting(t -> t.getFileIndex())
                 .isEqualTo(2);
 
-        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForBlock(-1, 0));
-        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForBlock(68, 172000));
-        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForBlock(69, 0));
-        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForBlock(70, 0));
+        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForPiece(-1, 0));
+        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForPiece(68, 172000));
+        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForPiece(69, 0));
+        assertThatIndexOutOfBoundsException().isThrownBy(() -> torrent.getFilePositionForPiece(70, 0));
     }
 
     @Test

@@ -2,6 +2,8 @@ package vertx.bittorrent;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.file.FileSystem;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.http.HttpClientRequest;
 import io.vertx.core.http.HttpClientResponse;
@@ -22,6 +24,7 @@ public class ClientVerticle extends AbstractVerticle {
     private final String torrentFileName;
 
     private final List<PeerConnection> connections = new ArrayList<>();
+    private final Set<Integer> processingPieces = new HashSet<>();
 
     private ClientState clientState;
     private NetClient netClient;
@@ -30,28 +33,32 @@ public class ClientVerticle extends AbstractVerticle {
     private long totalBytesDownloaded = 0L;
     private long timerId;
 
-    private Set<Integer> processingPieces = new HashSet<>();
-
     @Override
     public void start() throws Exception {
-        clientState = new ClientState(vertx);
+        FileSystem fs = vertx.fileSystem();
+
+        if (!fs.existsBlocking(torrentFileName)) {
+            log.error("Could not find torrent file at: {}", torrentFileName);
+            vertx.close();
+            return;
+        }
+
+        Buffer torrentBuffer = fs.readFileBlocking(torrentFileName);
+
+        Torrent torrent = Torrent.fromBuffer(torrentBuffer);
+
+        clientState = new ClientState(vertx, torrent);
 
         netClient = vertx.createNetClient();
         httpClient = vertx.createHttpClient();
 
-        vertx.fileSystem()
-                .readFile(torrentFileName)
-                .onFailure(e -> log.error("Error reading file:", e))
-                .map(Torrent::fromBuffer)
-                .onFailure(e -> log.error("Error parsing torrent info:", e))
-                .onSuccess(clientState::setTorrent)
-                .onSuccess(torrent -> {
-                    announceToTracker(torrent).onSuccess(response -> {
-                        for (Peer peer : response.getPeers()) {
-                            connectToPeer(peer);
-                        }
-                    });
-                });
+        clientState.checkPiecesOnDisk().onSuccess(v -> {
+            announceToTracker(torrent).onSuccess(response -> {
+                for (Peer peer : response.getPeers()) {
+                    connectToPeer(peer);
+                }
+            });
+        });
 
         timerId = vertx.setPeriodic(1_000, id -> {
             double totalDownloadRate = 0.0f;
@@ -172,8 +179,7 @@ public class ClientVerticle extends AbstractVerticle {
 
                                 clientState.getBitfield().setPiece(piece.getIndex());
 
-                                if (clientState.getBitfield().cardinality()
-                                        == clientState.getTorrent().getPiecesCount()) {
+                                if (clientState.isTorrentComplete()) {
                                     log.info("Download completed");
 
                                     vertx.cancelTimer(timerId);

@@ -42,7 +42,7 @@ public class Torrent {
 
         announce = dict.requireString("announce");
 
-        comment = dict.findString("comment").orElse(null);
+        comment = dict.findString("comment").orElse("");
         createdBy = dict.findString("created by").orElse(null);
         creationDate =
                 dict.findLong("creation date").map(Instant::ofEpochSecond).orElse(null);
@@ -75,12 +75,20 @@ public class Torrent {
         piecesCount = (int) ((length + pieceLength - 1) / pieceLength);
 
         log.info("Name:          {}", name);
+        log.info("Comment:       {}", comment);
+        log.info("Created by:    {}", createdBy);
+        log.info("Created date:  {}", creationDate);
         log.info("Announce:      {}", announce);
         log.info("Length:        {}", length);
         log.info("Piece Length:  {}", pieceLength);
         log.info("Pieces count:  {}", piecesCount);
         log.info("Info hash:     {}", getHexEncodedInfoHash());
-        log.info("Files:         {}", files);
+
+        log.info("Files:");
+
+        for (var file : files) {
+            log.info("    {} ({} Bytes)", file.getPath(), file.getLength());
+        }
     }
 
     public boolean isSingleFile() {
@@ -120,7 +128,7 @@ public class Torrent {
         return ByteBuffer.wrap(pieces, index * DIGEST_LENGTH, DIGEST_LENGTH);
     }
 
-    public FilePosition getFilePositionForBlock(int pieceIndex, int pieceOffset) {
+    public FilePosition getFilePositionForPiece(int pieceIndex, int pieceOffset) {
         long offset = pieceIndex * pieceLength + pieceOffset;
 
         if (offset < 0) {
@@ -163,7 +171,7 @@ public class Torrent {
         try {
             BEncodedValue value = BDecoder.decode(inputStream);
             return new Torrent(value);
-        } catch (Exception e) {
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }

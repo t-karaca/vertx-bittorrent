@@ -6,6 +6,7 @@ import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.file.FileSystem;
 import io.vertx.core.net.NetClient;
+import io.vertx.core.net.NetServer;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -25,6 +26,7 @@ public class ClientVerticle extends AbstractVerticle {
     private ClientState clientState;
     private Tracker tracker;
     private NetClient netClient;
+    private NetServer netServer;
 
     private long timerId;
 
@@ -52,24 +54,42 @@ public class ClientVerticle extends AbstractVerticle {
         });
 
         netClient = vertx.createNetClient();
+        netServer = vertx.createNetServer();
 
-        clientState.checkPiecesOnDisk().onSuccess(v -> {
+        netServer.connectHandler(socket -> {
+            Peer peer = new Peer(socket.remoteAddress());
+            log.debug("[{}] Peer connected", peer);
+
+            PeerConnection connection = new PeerConnection(socket, clientState, peer);
+
+            setupPeerConnection(connection);
+        });
+
+        clientState.checkPiecesOnDisk().flatMap(v -> netServer.listen(12345)).onSuccess(server -> {
+            log.info("Listening on port {}", server.actualPort());
+            clientState.setServerPort(server.actualPort());
+
             tracker.announce();
         });
 
         timerId = vertx.setPeriodic(1_000, id -> {
             double totalDownloadRate = 0.0f;
+            double totalUploadRate = 0.0f;
 
             for (var connection : connections) {
                 int deltaBytes = connection.getBytesDownloaded() - connection.getPreviousBytesDownloaded();
+                int deltaBytesUploaded = connection.getBytesUploaded() - connection.getPreviousBytesUploaded();
 
                 clientState.addTotalBytesDownloaded(deltaBytes);
+                clientState.addTotalBytesUploaded(deltaBytesUploaded);
 
                 totalDownloadRate += deltaBytes;
+                totalUploadRate += deltaBytesUploaded;
 
                 connection.setDownloadRate(deltaBytes);
 
                 connection.setPreviousBytesDownloaded(connection.getBytesDownloaded());
+                connection.setPreviousBytesUploaded(connection.getBytesUploaded());
             }
 
             long completedBytes = clientState.getCompletedBytes();
@@ -79,11 +99,12 @@ public class ClientVerticle extends AbstractVerticle {
             String progress = String.format("%.02f", downloadedRatio * 100.0);
 
             log.info(
-                    "Download progress: {}% ({} / {}) ({}/s)",
+                    "{}% ({} / {}) (↓ {}/s | ↑ {}/s)",
                     progress,
                     ByteFormat.format(completedBytes),
                     ByteFormat.format(clientState.getTorrent().getLength()),
-                    ByteFormat.format(totalDownloadRate));
+                    ByteFormat.format(totalDownloadRate),
+                    ByteFormat.format(totalUploadRate));
         });
     }
 
@@ -131,50 +152,101 @@ public class ClientVerticle extends AbstractVerticle {
             }
         }
 
-        return PeerConnection.connect(netClient, clientState, peer).onSuccess(connection -> {
-            connections.add(connection);
+        return PeerConnection.connect(netClient, clientState, peer)
+                .onSuccess(connection -> setupPeerConnection(connection));
+    }
 
-            connection.onBitfield(bitfield -> {
-                connection.interested();
-            });
+    private void setupPeerConnection(PeerConnection connection) {
+        connections.add(connection);
 
-            connection.onPieceCompleted(piece -> {
-                if (piece.isHashValid()) {
-                    processingPieces.add(piece.getIndex());
+        connection.onHandshake(handshake -> {
+            if (!HashUtils.isEqual(
+                    handshake.getInfoHash(), clientState.getTorrent().getInfoHash())) {
+                connection.close();
+            } else {
+                connection.handshake();
+                connection.bitfield();
+            }
+        });
 
-                    clientState
-                            .writePieceToDisk(piece)
-                            .onFailure(ex -> {
-                                log.error("Could not write piece to file", ex);
-                                processingPieces.remove(piece.getIndex());
-                                requestNextPiece(connection);
-                            })
-                            .onSuccess(v -> {
-                                processingPieces.remove(piece.getIndex());
+        connection.onBitfield(bitfield -> {
+            connection.interested();
+        });
 
-                                clientState.getBitfield().setPiece(piece.getIndex());
+        connection.onInterested(v -> {
+            connection.unchoke();
+        });
 
-                                if (clientState.isTorrentComplete()) {
-                                    log.info("Download completed");
+        connection.onNotInterested(v -> {
+            connection.choke();
+        });
 
-                                    vertx.cancelTimer(timerId);
-                                    tracker.completed();
-                                } else {
-                                    requestNextPiece(connection);
-                                }
-                            });
+        connection.onRequest(request -> {
+            if (!connection.isChoked()) {
+                clientState.readPieceFromDisk(request.getPieceIndex()).onSuccess(buffer -> {
+                    connection.piece(
+                            request.getPieceIndex(),
+                            request.getBegin(),
+                            buffer.slice(request.getBegin(), request.getBegin() + request.getLength()));
+                });
+            }
+        });
+
+        connection.onHasPiece(i -> {
+            if (!clientState.getBitfield().hasPiece(i) && !isPieceRequested(i)) {
+                if (connection.isRemoteChoked()) {
+                    connection.interested();
                 } else {
-                    // peer sent faulty piece
-                    log.warn("Received invalid piece for index: {}", piece.getIndex());
                     requestNextPiece(connection);
                 }
-            });
-
-            connection.onUnchoked(v -> {
-                requestNextPiece(connection);
-            });
-
-            connection.onClosed(v -> connections.remove(connection));
+            }
         });
+
+        connection.onPieceCompleted(piece -> {
+            if (piece.isHashValid()) {
+                processingPieces.add(piece.getIndex());
+
+                clientState
+                        .writePieceToDisk(piece)
+                        .onFailure(ex -> {
+                            log.error("Could not write piece to file", ex);
+                            processingPieces.remove(piece.getIndex());
+                            requestNextPiece(connection);
+                        })
+                        .onSuccess(v -> {
+                            processingPieces.remove(piece.getIndex());
+
+                            clientState.getBitfield().setPiece(piece.getIndex());
+
+                            for (var conn : connections) {
+                                conn.have(piece.getIndex());
+                            }
+
+                            if (clientState.isTorrentComplete()) {
+                                log.info("Download completed");
+
+                                tracker.completed();
+
+                                for (var conn : connections) {
+                                    conn.notInterested();
+                                }
+
+                                // vertx.cancelTimer(timerId);
+                            } else {
+                                requestNextPiece(connection);
+                            }
+                        });
+            } else {
+                // peer sent faulty piece
+                log.warn("Received invalid piece for index: {}", piece.getIndex());
+                requestNextPiece(connection);
+            }
+        });
+
+        connection.onUnchoked(v -> {
+            requestNextPiece(connection);
+        });
+
+        connection.onClosed(v -> connections.remove(connection));
     }
 }

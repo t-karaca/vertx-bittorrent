@@ -2,6 +2,7 @@ package vertx.bittorrent;
 
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetSocket;
 import java.nio.ByteBuffer;
@@ -14,6 +15,7 @@ import vertx.bittorrent.PieceState.BlockState;
 import vertx.bittorrent.messages.BitfieldMessage;
 import vertx.bittorrent.messages.ChokeMessage;
 import vertx.bittorrent.messages.HandshakeMessage;
+import vertx.bittorrent.messages.HaveMessage;
 import vertx.bittorrent.messages.InterestedMessage;
 import vertx.bittorrent.messages.Message;
 import vertx.bittorrent.messages.NotInterestedMessage;
@@ -31,10 +33,13 @@ public class PeerConnection {
     private final Peer peer;
 
     private final ProtocolHandler protocolHandler =
-            new ProtocolHandler().setMessageHandler(this::handleProtocolMessage);
+            new ProtocolHandler().onMessage(this::handleProtocolMessage).onInvalidHandshake(v -> close());
 
     @Getter
     private Bitfield bitfield;
+
+    private boolean handshakeSent = false;
+    private boolean handshakeReceived = false;
 
     @Getter
     private boolean choked = true;
@@ -56,6 +61,13 @@ public class PeerConnection {
     private int previousBytesDownloaded = 0;
 
     @Getter
+    private int bytesUploaded = 0;
+
+    @Getter
+    @Setter
+    private int previousBytesUploaded = 0;
+
+    @Getter
     @Setter
     private float downloadRate = 0.0f;
 
@@ -64,6 +76,7 @@ public class PeerConnection {
 
     private Map<Integer, PieceState> pieceStates = new HashMap<>();
 
+    private Handler<HandshakeMessage> handshakeHandler;
     private Handler<Bitfield> bitfieldHandler;
     private Handler<Void> chokedHandler;
     private Handler<Void> unchokedHandler;
@@ -71,21 +84,45 @@ public class PeerConnection {
     private Handler<Void> notInterestedHandler;
     private Handler<RequestMessage> requestHandler;
     private Handler<Piece> pieceHandler;
+    private Handler<Integer> hasPieceHandler;
+    private Handler<Void> closedHandler;
 
-    private PeerConnection(NetSocket socket, ClientState clientState, Peer peer) {
-        log.debug("Connected to peer at {}", peer);
-
+    public PeerConnection(NetSocket socket, ClientState clientState, Peer peer) {
         this.socket = socket;
         this.clientState = clientState;
         this.peer = peer;
 
-        socket.handler(protocolHandler::readBuffer);
+        this.bitfield = Bitfield.fromSize((int) clientState.getTorrent().getPiecesCount());
 
-        sendMessage(new HandshakeMessage(clientState.getTorrent().getInfoHash(), clientState.getPeerId()));
+        socket.exceptionHandler(ex -> {
+            log.error("[{}] Error", peer, ex);
+        });
+
+        socket.handler(buffer -> {
+            log.trace("[{}] Received buffer with length {}", peer, buffer.length());
+            protocolHandler.readBuffer(buffer);
+        });
+
+        socket.closeHandler(v -> {
+            log.debug("[{}] Peer disconnected", peer);
+
+            if (closedHandler != null) {
+                closedHandler.handle(null);
+            }
+        });
     }
 
     public boolean isPieceRequested(int index) {
         return pieceStates.containsKey(index);
+    }
+
+    public boolean isHandshakeCompleted() {
+        return handshakeSent && handshakeReceived;
+    }
+
+    public PeerConnection onHandshake(Handler<HandshakeMessage> handler) {
+        handshakeHandler = handler;
+        return this;
     }
 
     public PeerConnection onBitfield(Handler<Bitfield> handler) {
@@ -113,6 +150,11 @@ public class PeerConnection {
         return this;
     }
 
+    public PeerConnection onHasPiece(Handler<Integer> handler) {
+        hasPieceHandler = handler;
+        return this;
+    }
+
     public PeerConnection onRequest(Handler<RequestMessage> handler) {
         requestHandler = handler;
         return this;
@@ -124,7 +166,7 @@ public class PeerConnection {
     }
 
     public PeerConnection onClosed(Handler<Void> handler) {
-        socket.closeHandler(handler);
+        closedHandler = handler;
         return this;
     }
 
@@ -132,24 +174,53 @@ public class PeerConnection {
         return socket.close();
     }
 
+    public void handshake() {
+        if (!handshakeSent) {
+            handshakeSent = true;
+            sendMessage(new HandshakeMessage(0L, clientState.getTorrent().getInfoHash(), clientState.getPeerId()));
+        }
+    }
+
+    public void bitfield() {
+        sendMessage(new BitfieldMessage(clientState.getBitfield()));
+    }
+
     public void choke() {
-        choked = true;
-        sendMessage(new ChokeMessage());
+        if (!choked) {
+            choked = true;
+            sendMessage(new ChokeMessage());
+        }
     }
 
     public void unchoke() {
-        choked = false;
-        sendMessage(new UnchokeMessage());
+        if (choked) {
+            choked = false;
+            sendMessage(new UnchokeMessage());
+        }
     }
 
     public void interested() {
-        interested = true;
-        sendMessage(new InterestedMessage());
+        if (!interested) {
+            interested = true;
+            sendMessage(new InterestedMessage());
+        }
     }
 
     public void notInterested() {
-        interested = false;
-        sendMessage(new NotInterestedMessage());
+        if (interested) {
+            interested = false;
+            sendMessage(new NotInterestedMessage());
+        }
+    }
+
+    public void have(int index) {
+        sendMessage(new HaveMessage(index));
+    }
+
+    public void piece(int index, int begin, Buffer data) {
+        sendMessage(new PieceMessage(index, begin, data)).onSuccess(v -> {
+            bytesUploaded += data.length();
+        });
     }
 
     public void requestPiece(int pieceIndex) {
@@ -180,6 +251,7 @@ public class PeerConnection {
 
     private void processRequests() {
         while (currentRequestCount < requestLimit && canRequest()) {
+            pieces:
             for (var entry : pieceStates.entrySet()) {
                 int pieceIndex = entry.getKey();
                 var pieceState = entry.getValue();
@@ -190,7 +262,7 @@ public class PeerConnection {
                         pieceState.setBlockState(i, BlockState.Requested);
                         sendMessage(new RequestMessage(
                                 pieceIndex, pieceState.getBlockOffset(i), pieceState.getBlockSize(i)));
-                        break;
+                        break pieces;
                     }
                 }
             }
@@ -198,9 +270,17 @@ public class PeerConnection {
     }
 
     private void handleProtocolMessage(Message message) {
-        log.debug("[{}] Received {}", peer, message.getMessageType().name());
+        log.debug("[{}] Received {}", peer, message);
 
-        if (message instanceof BitfieldMessage bitfieldMessage) {
+        if (message instanceof HandshakeMessage handshakeMessage) {
+            if (!handshakeReceived) {
+                handshakeReceived = true;
+
+                if (handshakeHandler != null) {
+                    handshakeHandler.handle(handshakeMessage);
+                }
+            }
+        } else if (message instanceof BitfieldMessage bitfieldMessage) {
             bitfield = bitfieldMessage.getBitfield();
 
             if (bitfieldHandler != null) {
@@ -229,6 +309,14 @@ public class PeerConnection {
 
             if (notInterestedHandler != null) {
                 notInterestedHandler.handle(null);
+            }
+        } else if (message instanceof HaveMessage haveMessage) {
+            int pieceIndex = haveMessage.getPieceIndex();
+
+            bitfield.setPiece(pieceIndex);
+
+            if (hasPieceHandler != null) {
+                hasPieceHandler.handle(pieceIndex);
             }
         } else if (message instanceof RequestMessage requestMessage) {
             if (requestHandler != null) {
@@ -281,15 +369,17 @@ public class PeerConnection {
             return Future.succeededFuture();
         }
 
-        log.debug("[{}] Sending {}", peer, message.getMessageType().name());
+        log.debug("[{}] Sending {}", peer, message);
         return socket.write(message.toBuffer());
     }
 
     public static Future<PeerConnection> connect(NetClient client, ClientState clientState, Peer peer) {
-        log.debug("Trying to connect to peer at {}", peer);
+        log.debug("[{}] Trying to connect to peer", peer);
 
-        return client.connect(peer.getPort(), peer.getAddress().getHostAddress())
-                .onFailure(ex -> log.error("Could not connect to peer:", ex))
-                .map(socket -> new PeerConnection(socket, clientState, peer));
+        return client.connect(peer.getAddress())
+                .onFailure(ex -> log.error("[{}] Could not connect to peer: {}", peer, ex.getMessage()))
+                .map(socket -> new PeerConnection(socket, clientState, peer))
+                .onSuccess(conn -> log.debug("[{}] Connected to peer", peer))
+                .onSuccess(conn -> conn.handshake());
     }
 }

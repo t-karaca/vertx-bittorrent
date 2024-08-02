@@ -79,8 +79,8 @@ public class Torrent {
         log.info("Created by:    {}", createdBy);
         log.info("Created date:  {}", creationDate);
         log.info("Announce:      {}", announce);
-        log.info("Length:        {}", length);
-        log.info("Piece Length:  {}", pieceLength);
+        log.info("Length:        {} ({})", length, ByteFormat.format(length));
+        log.info("Piece Length:  {} ({})", pieceLength, ByteFormat.format(pieceLength));
         log.info("Pieces count:  {}", piecesCount);
         log.info("Info hash:     {}", getHexEncodedInfoHash());
 

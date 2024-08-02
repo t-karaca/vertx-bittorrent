@@ -2,19 +2,29 @@ package vertx.bittorrent.messages;
 
 import io.vertx.core.buffer.Buffer;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import lombok.ToString;
 
 @Getter
 @RequiredArgsConstructor
-@ToString
 public class HandshakeMessage extends Message {
     public static final int HANDSHAKE_LENGTH = 68;
     private static final String PROTOCOL_NAME = "BitTorrent protocol";
 
+    private final long reserved;
     private final byte[] infoHash;
     private final byte[] peerId;
+
+    @Override
+    public String toString() {
+        return "HandshakeMessage(reserved=%016X, infoHash=%s, peerId=%s)"
+                .formatted(
+                        reserved,
+                        HexFormat.of().formatHex(infoHash),
+                        HexFormat.of().formatHex(peerId));
+    }
 
     @Override
     public MessageType getMessageType() {
@@ -40,13 +50,20 @@ public class HandshakeMessage extends Message {
         }
 
         // protocol name length
-        buffer.get();
+        byte protocolNameLength = buffer.get();
+        if (protocolNameLength != 19) {
+            return null;
+        }
 
         byte[] protocolNameBytes = new byte[PROTOCOL_NAME.length()];
         buffer.get(protocolNameBytes);
 
+        if (!PROTOCOL_NAME.equals(new String(protocolNameBytes, StandardCharsets.UTF_8))) {
+            return null;
+        }
+
         // reserved bytes
-        buffer.getLong();
+        long reserved = buffer.getLong();
 
         byte[] infoHash = new byte[20];
         buffer.get(infoHash);
@@ -54,6 +71,6 @@ public class HandshakeMessage extends Message {
         byte[] peerId = new byte[20];
         buffer.get(peerId);
 
-        return new HandshakeMessage(infoHash, peerId);
+        return new HandshakeMessage(reserved, infoHash, peerId);
     }
 }

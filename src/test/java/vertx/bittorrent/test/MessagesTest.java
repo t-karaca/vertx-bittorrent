@@ -37,7 +37,7 @@ public class MessagesTest {
         byte[] infoHash = Base64.getDecoder().decode("gedTxedXn/YI12qhOIfQ0Iz95wI=");
         byte[] peerId = Base64.getDecoder().decode("QTItMS0zNy0wLbUFa464yB4/o5c=");
 
-        HandshakeMessage message = new HandshakeMessage(infoHash, peerId);
+        HandshakeMessage message = new HandshakeMessage(0, infoHash, peerId);
 
         byte[] bytes = message.toBuffer().getBytes();
 

@@ -59,7 +59,7 @@ public class Tracker {
 
         UriBuilder builder = UriBuilder.fromUriString(torrent.getAnnounce())
                 .queryParam("info_hash", torrent.getInfoHash())
-                .rawQueryParam("port", "12345")
+                .queryParam("port", clientState.getServerPort())
                 .queryParam("peer_id", clientState.getPeerId())
                 .queryParam("uploaded", clientState.getTotalBytesUploaded())
                 .queryParam("downloaded", clientState.getTotalBytesDownloaded())

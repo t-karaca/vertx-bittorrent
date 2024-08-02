@@ -4,10 +4,12 @@ import be.adaxisoft.bencode.BDecoder;
 import be.adaxisoft.bencode.BEncodedValue;
 import be.adaxisoft.bencode.InvalidBEncodingException;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.net.SocketAddress;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -98,8 +100,9 @@ public class TrackerResponse {
 
             try {
                 InetAddress addr = InetAddress.getByAddress(addressBytes);
+                SocketAddress socketAddress = SocketAddress.inetSocketAddress(new InetSocketAddress(addr, port));
 
-                Peer peer = new Peer(addr, port, null);
+                Peer peer = new Peer(socketAddress, null);
                 if (port >= 0) peers.add(peer);
 
             } catch (UnknownHostException e) {

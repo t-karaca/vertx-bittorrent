@@ -2,18 +2,22 @@ package vertx.bittorrent.messages;
 
 import io.vertx.core.buffer.Buffer;
 import java.nio.ByteBuffer;
+import java.util.HexFormat;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
-import lombok.ToString;
 import vertx.bittorrent.Bitfield;
 
 @Getter
 @RequiredArgsConstructor
-@ToString
 public class BitfieldMessage extends Message {
     @NonNull
     private final Bitfield bitfield;
+
+    @Override
+    public String toString() {
+        return "BitfieldMessage(bitfield=" + HexFormat.of().formatHex(bitfield.toByteArray()) + ")";
+    }
 
     @Override
     public int getPayloadLength() {

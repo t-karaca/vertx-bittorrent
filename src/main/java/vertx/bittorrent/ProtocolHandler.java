@@ -9,6 +9,7 @@ import vertx.bittorrent.messages.ChokeMessage;
 import vertx.bittorrent.messages.HandshakeMessage;
 import vertx.bittorrent.messages.HaveMessage;
 import vertx.bittorrent.messages.InterestedMessage;
+import vertx.bittorrent.messages.KeepAliveMessage;
 import vertx.bittorrent.messages.Message;
 import vertx.bittorrent.messages.MessageType;
 import vertx.bittorrent.messages.NotInterestedMessage;
@@ -104,65 +105,71 @@ public class ProtocolHandler {
                 }
             }
 
-            if (nextMessageLength == -1) {
-                return;
-            }
+            if (nextMessageLength == 0) {
+                if (messageHandler != null) {
+                    messageHandler.handle(new KeepAliveMessage());
+                }
 
-            int bytesToRead = nextMessageLength - input.limit();
+                nextMessageLength = -1;
+                input.limit(0);
+            } else if (nextMessageLength > 0) {
 
-            int readableBytes = Math.min(buffer.length() - bufferPosition, bytesToRead);
+                int bytesToRead = nextMessageLength - input.limit();
 
-            if (readableBytes <= 0) {
-                return;
-            }
+                int readableBytes = Math.min(buffer.length() - bufferPosition, bytesToRead);
 
-            buffer.getBytes(bufferPosition, bufferPosition + readableBytes, input.array(), input.limit());
-            bufferPosition += readableBytes;
-            input.limit(input.limit() + readableBytes);
+                if (readableBytes <= 0) {
+                    return;
+                }
 
-            if (input.limit() == nextMessageLength) {
-                Message message = null;
+                buffer.getBytes(bufferPosition, bufferPosition + readableBytes, input.array(), input.limit());
+                bufferPosition += readableBytes;
+                input.limit(input.limit() + readableBytes);
 
-                if (!handshakeComplete) {
-                    message = HandshakeMessage.fromBuffer(input);
+                if (input.limit() == nextMessageLength) {
+                    Message message = null;
 
-                    if (message == null) {
-                        log.debug("Received invalid handshake");
+                    if (!handshakeComplete) {
+                        message = HandshakeMessage.fromBuffer(input);
 
-                        if (invalidHandshakeHandler != null) {
-                            invalidHandshakeHandler.handle(null);
+                        if (message == null) {
+                            log.debug("Received invalid handshake");
+
+                            if (invalidHandshakeHandler != null) {
+                                invalidHandshakeHandler.handle(null);
+                            }
+
+                            reset();
+                            return;
                         }
 
-                        reset();
-                        return;
+                        handshakeComplete = true;
+                    } else {
+                        MessageType messageType = MessageType.fromValue(input.get());
+
+                        message = switch (messageType) {
+                            case CHOKE -> new ChokeMessage();
+                            case UNCHOKE -> new UnchokeMessage();
+                            case INTERESTED -> new InterestedMessage();
+                            case NOT_INTERESTED -> new NotInterestedMessage();
+                            case HAVE -> HaveMessage.fromBuffer(input);
+                            case BITFIELD -> BitfieldMessage.fromBuffer(input);
+                            case REQUEST -> RequestMessage.fromBuffer(input);
+                            case PIECE -> PieceMessage.fromBuffer(input);
+                            default -> null;};
                     }
 
-                    handshakeComplete = true;
-                } else {
-                    MessageType messageType = MessageType.fromValue(input.get());
-
-                    message = switch (messageType) {
-                        case CHOKE -> new ChokeMessage();
-                        case UNCHOKE -> new UnchokeMessage();
-                        case INTERESTED -> new InterestedMessage();
-                        case NOT_INTERESTED -> new NotInterestedMessage();
-                        case HAVE -> HaveMessage.fromBuffer(input);
-                        case BITFIELD -> BitfieldMessage.fromBuffer(input);
-                        case REQUEST -> RequestMessage.fromBuffer(input);
-                        case PIECE -> PieceMessage.fromBuffer(input);
-                        default -> null;};
-                }
-
-                if (message != null) {
-                    if (messageHandler != null) {
-                        messageHandler.handle(message);
+                    if (message != null) {
+                        if (messageHandler != null) {
+                            messageHandler.handle(message);
+                        }
+                    } else {
+                        log.debug("Received unknown message");
                     }
-                } else {
-                    log.debug("Received unknown message");
-                }
 
-                input.limit(0);
-                nextMessageLength = -1;
+                    input.limit(0);
+                    nextMessageLength = -1;
+                }
             }
         }
     }

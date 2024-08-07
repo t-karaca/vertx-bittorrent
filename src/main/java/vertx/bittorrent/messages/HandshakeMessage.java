@@ -51,7 +51,7 @@ public class HandshakeMessage extends Message {
 
         // protocol name length
         byte protocolNameLength = buffer.get();
-        if (protocolNameLength != 19) {
+        if (protocolNameLength != PROTOCOL_NAME.length()) {
             return null;
         }
 

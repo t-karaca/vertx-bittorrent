@@ -7,6 +7,7 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.file.FileSystem;
 import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetServer;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -22,13 +23,20 @@ public class ClientVerticle extends AbstractVerticle {
 
     private final List<PeerConnection> connections = new ArrayList<>();
     private final Set<Integer> processingPieces = new HashSet<>();
+    private final Set<Peer> connectingPeers = new HashSet<>();
 
     private ClientState clientState;
     private Tracker tracker;
     private NetClient netClient;
     private NetServer netServer;
 
-    private long timerId;
+    private int maxConnections = 50;
+    private SecureRandom random = new SecureRandom();
+
+    private long timerId = -1;
+    private long connectTimerId = -1;
+
+    private List<Peer> connectionQueue = new ArrayList<>();
 
     @Override
     public void start() throws Exception {
@@ -49,7 +57,17 @@ public class ClientVerticle extends AbstractVerticle {
 
         tracker.onPeersReceived(peers -> {
             for (Peer peer : peers) {
-                connectToPeer(peer);
+                if (!isConnectedToPeer(peer) && !connectionQueue.contains(peer)) {
+                    connectionQueue.add(peer);
+                }
+            }
+
+            if (connectTimerId == -1) {
+                connectToPeers();
+
+                connectTimerId = vertx.setPeriodic(10_000, id -> {
+                    connectToPeers();
+                });
             }
         });
 
@@ -117,18 +135,82 @@ public class ClientVerticle extends AbstractVerticle {
         tracker.close().onComplete(ar -> stopPromise.complete());
     }
 
-    private void requestNextPiece(PeerConnection connection) {
-        for (int i = 0; i < clientState.getTorrent().getPiecesCount(); i++) {
-            if (!clientState.getBitfield().hasPiece(i)
-                    && connection.getBitfield().hasPiece(i)
-                    && !isProcessingPiece(i)
-                    && !isPieceRequested(i)) {
+    private void connectToPeers() {
+        int connectionsToOpen =
+                Math.min(maxConnections - connections.size() - connectingPeers.size(), connectionQueue.size());
 
-                log.debug("Requesting piece {} from peer {}", i, connection.getPeer());
-                connection.requestPiece(i);
-                break;
+        if (connectionsToOpen <= 0) {
+            return;
+        }
+
+        log.info("Trying to open {} connections", connectionsToOpen);
+
+        while (connectionsToOpen > 0 && connectionQueue.size() > 0) {
+            int index = random.nextInt(connectionQueue.size());
+
+            Peer peer = connectionQueue.remove(index);
+
+            if (isConnectedToPeer(peer)) {
+                continue;
+            }
+
+            connectingPeers.add(peer);
+
+            connectionsToOpen--;
+            connectToPeer(peer).onComplete(ar -> connectingPeers.remove(peer));
+        }
+    }
+
+    private boolean isConnectedToPeer(Peer peer) {
+        for (var connection : connections) {
+            if (connection.getPeer().equals(peer)) {
+                return true;
             }
         }
+
+        return false;
+    }
+
+    private boolean hasRequiredPiece(PeerConnection connection, int pieceIndex) {
+        return !clientState.getBitfield().hasPiece(pieceIndex)
+                && connection.getBitfield().hasPiece(pieceIndex)
+                && !isPieceRequested(pieceIndex)
+                && !isProcessingPiece(pieceIndex);
+    }
+
+    private boolean hasRequiredPieces(PeerConnection connection) {
+        for (int i = 0; i < clientState.getTorrent().getPiecesCount(); i++) {
+            if (hasRequiredPiece(connection, i)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private int requestNextPiece(PeerConnection connection) {
+        if (!connection.isInterested() || connection.isRemoteChoked()) {
+            return -1;
+        }
+
+        int pieceIndex = -1;
+
+        for (int i = 0; i < clientState.getTorrent().getPiecesCount(); i++) {
+            if (hasRequiredPiece(connection, i)) {
+                if (pieceIndex == -1) {
+                    pieceIndex = i;
+                } else if (random.nextInt((int) clientState.getTorrent().getPiecesCount()) == 0) {
+                    pieceIndex = i;
+                }
+            }
+        }
+
+        if (pieceIndex != -1) {
+            log.debug("Requesting piece {} from peer {}", pieceIndex, connection.getPeer());
+            connection.requestPiece(pieceIndex);
+        }
+
+        return pieceIndex;
     }
 
     private boolean isProcessingPiece(int pieceIndex) {
@@ -162,15 +244,31 @@ public class ClientVerticle extends AbstractVerticle {
         connection.onHandshake(handshake -> {
             if (!HashUtils.isEqual(
                     handshake.getInfoHash(), clientState.getTorrent().getInfoHash())) {
+                // other peer requested unknown info hash (e.g. other torrent)
+                connection.close();
+            } else if (Arrays.equals(handshake.getPeerId(), clientState.getPeerId())) {
+                // we connected to ourselves
                 connection.close();
             } else {
                 connection.handshake();
-                connection.bitfield();
+
+                if (clientState.getBitfield().hasAnyPieces()) {
+                    connection.bitfield();
+                }
             }
         });
 
         connection.onBitfield(bitfield -> {
-            connection.interested();
+            if (clientState.isTorrentComplete()
+                    && bitfield.cardinality() == clientState.getTorrent().getPiecesCount()) {
+                // we have all pieces and they have all pieces
+                // no reason to keep the connection open
+                connection.close();
+            }
+
+            if (!connection.isInterested() && hasRequiredPieces(connection)) {
+                connection.interested();
+            }
         });
 
         connection.onInterested(v -> {
@@ -193,12 +291,8 @@ public class ClientVerticle extends AbstractVerticle {
         });
 
         connection.onHasPiece(i -> {
-            if (!clientState.getBitfield().hasPiece(i) && !isPieceRequested(i)) {
-                if (connection.isRemoteChoked()) {
-                    connection.interested();
-                } else {
-                    requestNextPiece(connection);
-                }
+            if (!connection.isInterested() && hasRequiredPiece(connection, i)) {
+                connection.interested();
             }
         });
 

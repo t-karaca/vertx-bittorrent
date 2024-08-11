@@ -104,7 +104,7 @@ public class PeerConnection {
         });
 
         socket.closeHandler(v -> {
-            log.debug("[{}] Peer disconnected", peer);
+            log.info("[{}] Peer disconnected", peer);
 
             if (closedHandler != null) {
                 closedHandler.handle(null);
@@ -379,7 +379,7 @@ public class PeerConnection {
         return client.connect(peer.getAddress())
                 .onFailure(ex -> log.error("[{}] Could not connect to peer: {}", peer, ex.getMessage()))
                 .map(socket -> new PeerConnection(socket, clientState, peer))
-                .onSuccess(conn -> log.debug("[{}] Connected to peer", peer))
+                .onSuccess(conn -> log.info("[{}] Connected to peer", peer))
                 .onSuccess(conn -> conn.handshake());
     }
 }

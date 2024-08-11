@@ -10,9 +10,11 @@ import io.vertx.core.net.NetServer;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,6 +34,7 @@ public class ClientVerticle extends AbstractVerticle {
     private NetServer netServer;
 
     private int maxConnections = 50;
+    private int maxDownloadingPeers = 6;
     private SecureRandom random = new SecureRandom();
 
     private long timerId = -1;
@@ -95,6 +98,9 @@ public class ClientVerticle extends AbstractVerticle {
             double totalDownloadRate = 0.0;
             double totalUploadRate = 0.0;
 
+            double totalAvgDownloadRate = 0.0;
+            double totalAvgUploadRate = 0.0;
+
             for (var connection : connections) {
                 int deltaBytes = connection.getBytesDownloaded() - connection.getPreviousBytesDownloaded();
                 int deltaBytesUploaded = connection.getBytesUploaded() - connection.getPreviousBytesUploaded();
@@ -107,9 +113,14 @@ public class ClientVerticle extends AbstractVerticle {
 
                 connection.setPreviousBytesDownloaded(connection.getBytesDownloaded());
                 connection.setPreviousBytesUploaded(connection.getBytesUploaded());
+
+                totalAvgDownloadRate += connection.getAverageDownloadRate();
+                totalAvgUploadRate += connection.getAverageUploadRate();
             }
 
             long completedBytes = clientState.getCompletedBytes();
+            long remainingBytes = clientState.getTorrent().getLength() - completedBytes;
+            long remainingTime = (long) (remainingBytes / totalAvgDownloadRate);
             double downloadedRatio =
                     completedBytes / (double) clientState.getTorrent().getLength();
 
@@ -117,6 +128,8 @@ public class ClientVerticle extends AbstractVerticle {
 
             long seeding = getSeedingPeersCount();
             long leeching = getLeechingPeersCount();
+            long downloading = getDownloadingPeersCount();
+
             log.info(
                     "{}% ({} / {}) (↓ {}/s | ↑ {}/s) ({} connected peers, {} seeding, {} leeching)",
                     progress,
@@ -127,6 +140,93 @@ public class ClientVerticle extends AbstractVerticle {
                     connections.size(),
                     seeding,
                     leeching);
+        });
+
+        vertx.setPeriodic(10_000, id -> {
+            for (var connection : connections) {
+                connection.keepAlive();
+            }
+
+            int downloadingPeersCount = getDownloadingPeersCount();
+
+            if (downloadingPeersCount < maxDownloadingPeers) {
+                return;
+            }
+
+            // check if we have enough connected peers to rotate on
+            if (connections.size() > downloadingPeersCount) {
+
+                List<PeerConnection> untestedPeers = connections.stream()
+                        .filter(conn -> !conn.isDownloading())
+                        .filter(conn -> conn.getDownloadingDuration() < 10.0)
+                        .filter(this::hasRequiredPieces)
+                        .sorted(Comparator.comparingDouble(PeerConnection::getRemoteUnchokedDuration)
+                                .thenComparingDouble(PeerConnection::getTotalWaitingDuration))
+                        .collect(Collectors.toCollection(ArrayList::new));
+
+                List<PeerConnection> testedPeers = connections.stream()
+                        .filter(conn -> !conn.isDownloading())
+                        .filter(conn -> conn.getDownloadingDuration() >= 10.0)
+                        .filter(this::hasRequiredPieces)
+                        .sorted(Comparator.comparingDouble(PeerConnection::getAverageDownloadRate)
+                                .reversed())
+                        .peek(conn -> log.debug(
+                                "[{}] Tested: {}/s, duration: {}",
+                                conn.getPeer(),
+                                ByteFormat.format(conn.getAverageDownloadRate()),
+                                conn.getDownloadingDuration()))
+                        .collect(Collectors.toCollection(ArrayList::new));
+
+                List<PeerConnection> seedingPeers = connections.stream()
+                        .filter(conn -> conn.isDownloading())
+                        .filter(conn -> conn.getDownloadingDuration() >= 10.0)
+                        .sorted(Comparator.comparingDouble(PeerConnection::getAverageDownloadRate))
+                        .peek(conn -> log.debug(
+                                "[{}] Monitoring: {}/s, duration: {}",
+                                conn.getPeer(),
+                                ByteFormat.format(conn.getAverageDownloadRate()),
+                                conn.getDownloadingDuration()))
+                        .collect(Collectors.toCollection(ArrayList::new));
+
+                int rotatingPeers = Math.max(0, seedingPeers.size() - maxDownloadingPeers + 2);
+                while (rotatingPeers > 2) {
+                    var conn = seedingPeers.remove(0);
+                    conn.setDownloading(false);
+                    rotatingPeers--;
+                    log.debug(
+                            "[{}] Not interested in peer with download rate: {}/s",
+                            conn.getPeer(),
+                            ByteFormat.format(conn.getAverageDownloadRate()));
+                }
+
+                while (rotatingPeers > 0 && !untestedPeers.isEmpty()) {
+                    var conn = untestedPeers.remove(0);
+                    var seedingConn = seedingPeers.remove(0);
+                    conn.setDownloading(true);
+                    seedingConn.setDownloading(false);
+                    requestNextPiece(conn);
+                    rotatingPeers--;
+                    log.debug("[{}] Testing download speed of peer", conn.getPeer());
+                }
+
+                while (rotatingPeers > 0 && !testedPeers.isEmpty()) {
+                    var seedingConn = seedingPeers.remove(0);
+                    var testedConn = testedPeers.remove(0);
+
+                    if (testedConn.getAverageDownloadRate() > seedingConn.getAverageDownloadRate()) {
+                        testedConn.setDownloading(true);
+                        requestNextPiece(testedConn);
+                        seedingConn.setDownloading(false);
+                        rotatingPeers--;
+                        log.debug(
+                                "[{}] Switching to faster peer with download rate: {}/s",
+                                testedConn.getPeer(),
+                                ByteFormat.format(testedConn.getAverageDownloadRate()));
+                    } else {
+                        break;
+                    }
+                }
+            }
         });
     }
 
@@ -168,6 +268,12 @@ public class ClientVerticle extends AbstractVerticle {
     private int getSeedingPeersCount() {
         return (int) connections.stream()
                 .filter(conn -> !conn.isRemoteChoked() && conn.isInterested())
+                .count();
+    }
+
+    private int getDownloadingPeersCount() {
+        return (int) connections.stream()
+                .filter(conn -> conn.isDownloading() && !conn.isRemoteChoked())
                 .count();
     }
 
@@ -351,8 +457,15 @@ public class ClientVerticle extends AbstractVerticle {
             }
         });
 
+        connection.onChoked(v -> {
+            connection.setDownloading(false);
+        });
+
         connection.onUnchoked(v -> {
-            requestNextPiece(connection);
+            if (getDownloadingPeersCount() < maxDownloadingPeers) {
+                connection.setDownloading(true);
+                requestNextPiece(connection);
+            }
         });
 
         connection.onClosed(v -> connections.remove(connection));

@@ -70,9 +70,14 @@ public class PeerConnection {
     @Getter
     @Setter
     private float downloadRate = 0.0f;
+    private long downloadStartedAt = -1;
+    private long downloadingDuration = 0;
 
     private int currentRequestCount = 0;
     private int requestLimit = 6;
+
+    @Getter
+    private boolean downloading = false;
 
     private Map<Integer, PieceState> pieceStates = new HashMap<>();
 
@@ -110,6 +115,26 @@ public class PeerConnection {
                 closedHandler.handle(null);
             }
         });
+    }
+
+    public double getAverageDownloadRate() {
+        double duration = getDownloadingDuration();
+
+        if (duration == 0.0) {
+            return 0.0;
+        }
+
+        return bytesDownloaded / duration;
+    }
+
+    public double getDownloadingDuration() {
+        long duration = downloadingDuration;
+
+        if (downloadStartedAt != -1) {
+            duration += (System.currentTimeMillis() - downloadStartedAt);
+        }
+
+        return duration / 1000.0;
     }
 
     public boolean isPieceRequested(int index) {
@@ -174,6 +199,19 @@ public class PeerConnection {
         return socket.close();
     }
 
+    public void setDownloading(boolean downloading) {
+        if (downloading && !this.downloading) {
+            downloadStartedAt = System.currentTimeMillis();
+        }
+
+        if (!downloading && this.downloading) {
+            downloadingDuration += (System.currentTimeMillis() - downloadStartedAt);
+            downloadStartedAt = -1;
+        }
+
+        this.downloading = downloading;
+    }
+
     public void handshake() {
         if (!handshakeSent) {
             handshakeSent = true;
@@ -234,7 +272,7 @@ public class PeerConnection {
     }
 
     private boolean canRequest() {
-        if (remoteChoked || pieceStates.isEmpty()) {
+        if (!downloading || remoteChoked || pieceStates.isEmpty()) {
             return false;
         }
 

@@ -9,6 +9,7 @@ import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetServer;
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -91,8 +92,8 @@ public class ClientVerticle extends AbstractVerticle {
         });
 
         timerId = vertx.setPeriodic(1_000, id -> {
-            double totalDownloadRate = 0.0f;
-            double totalUploadRate = 0.0f;
+            double totalDownloadRate = 0.0;
+            double totalUploadRate = 0.0;
 
             for (var connection : connections) {
                 int deltaBytes = connection.getBytesDownloaded() - connection.getPreviousBytesDownloaded();
@@ -104,8 +105,6 @@ public class ClientVerticle extends AbstractVerticle {
                 totalDownloadRate += deltaBytes;
                 totalUploadRate += deltaBytesUploaded;
 
-                connection.setDownloadRate(deltaBytes);
-
                 connection.setPreviousBytesDownloaded(connection.getBytesDownloaded());
                 connection.setPreviousBytesUploaded(connection.getBytesUploaded());
             }
@@ -116,13 +115,18 @@ public class ClientVerticle extends AbstractVerticle {
 
             String progress = String.format("%.02f", downloadedRatio * 100.0);
 
+            long seeding = getSeedingPeersCount();
+            long leeching = getLeechingPeersCount();
             log.info(
-                    "{}% ({} / {}) (↓ {}/s | ↑ {}/s)",
+                    "{}% ({} / {}) (↓ {}/s | ↑ {}/s) ({} connected peers, {} seeding, {} leeching)",
                     progress,
                     ByteFormat.format(completedBytes),
                     ByteFormat.format(clientState.getTorrent().getLength()),
                     ByteFormat.format(totalDownloadRate),
-                    ByteFormat.format(totalUploadRate));
+                    ByteFormat.format(totalUploadRate),
+                    connections.size(),
+                    seeding,
+                    leeching);
         });
     }
 
@@ -159,6 +163,16 @@ public class ClientVerticle extends AbstractVerticle {
             connectionsToOpen--;
             connectToPeer(peer).onComplete(ar -> connectingPeers.remove(peer));
         }
+    }
+
+    private int getSeedingPeersCount() {
+        return (int) connections.stream()
+                .filter(conn -> !conn.isRemoteChoked() && conn.isInterested())
+                .count();
+    }
+
+    private int getLeechingPeersCount() {
+        return (int) connections.stream().filter(conn -> !conn.isChoked()).count();
     }
 
     private boolean isConnectedToPeer(Peer peer) {

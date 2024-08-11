@@ -32,6 +32,8 @@ public class ClientVerticle extends AbstractVerticle {
     private NetServer netServer;
 
     private int maxConnections = 50;
+    private int maxLeechingPeers = 6;
+
     private SecureRandom random = new SecureRandom();
 
     private long timerId = -1;
@@ -241,6 +243,14 @@ public class ClientVerticle extends AbstractVerticle {
         return false;
     }
 
+    private void unchokeNext() {
+        connections.stream()
+                .filter(conn -> conn.isChoked() && conn.isRemoteInterested())
+                .sorted((a, b) -> (int) (a.getCurrentRemoteWaitingDuration() - b.getCurrentRemoteWaitingDuration()))
+                .findFirst()
+                .ifPresent(PeerConnection::unchoke);
+    }
+
     private Future<PeerConnection> connectToPeer(Peer peer) {
         for (var connection : connections) {
             if (peer.equals(connection.getPeer())) {
@@ -286,11 +296,17 @@ public class ClientVerticle extends AbstractVerticle {
         });
 
         connection.onInterested(v -> {
-            connection.unchoke();
+            if (getLeechingPeersCount() < maxLeechingPeers) {
+                connection.unchoke();
+            }
         });
 
         connection.onNotInterested(v -> {
             connection.choke();
+
+            if (getLeechingPeersCount() < maxLeechingPeers) {
+                unchokeNext();
+            }
         });
 
         connection.onRequest(request -> {
@@ -355,6 +371,12 @@ public class ClientVerticle extends AbstractVerticle {
             requestNextPiece(connection);
         });
 
-        connection.onClosed(v -> connections.remove(connection));
+        connection.onClosed(v -> {
+            connections.remove(connection);
+
+            if (getLeechingPeersCount() < maxLeechingPeers) {
+                unchokeNext();
+            }
+        });
     }
 }

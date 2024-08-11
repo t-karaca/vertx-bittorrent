@@ -9,6 +9,17 @@ import lombok.RequiredArgsConstructor;
 public class Bitfield {
 
     private final BitSet bits;
+    private final int size;
+
+    public boolean hasAnyPieces() {
+        for (int i = 0; i < bits.length(); i++) {
+            if (bits.get(i)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     public boolean hasPiece(int index) {
         return bits.get(index);
@@ -27,12 +38,13 @@ public class Bitfield {
     }
 
     public int getByteCount() {
-        return (bits.length() + 7) / 8;
+        return (size + 7) / 8;
     }
 
     public byte[] toByteArray() {
+        // needs to be big-endian (BitSet methods work in little-endian)
         byte[] bytes = new byte[getByteCount()];
-        for (int i = 0; i < bits.length(); i++) {
+        for (int i = 0; i < size; i++) {
             if (bits.get(i)) {
                 bytes[i / 8] |= 1 << (7 - i % 8);
             }
@@ -51,7 +63,7 @@ public class Bitfield {
     }
 
     public static Bitfield fromSize(int size) {
-        return new Bitfield(new BitSet(size));
+        return new Bitfield(new BitSet(size), size);
     }
 
     public static Bitfield fromBytes(byte[] bytes) {
@@ -71,6 +83,6 @@ public class Bitfield {
             }
         }
 
-        return new Bitfield(bitset);
+        return new Bitfield(bitset, bitLength);
     }
 }

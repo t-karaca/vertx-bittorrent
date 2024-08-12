@@ -7,7 +7,9 @@
         </encoder>
     </appender>
 
-    <logger name="vertx.bittorrent" level="DEBUG"/>
+    <!-- <logger name="vertx.bittorrent" level="TRACE"/> -->
+    <!-- <logger name="vertx.bittorrent" level="DEBUG"/> -->
+    <!-- <logger name="vertx.bittorrent" level="INFO"/> -->
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>

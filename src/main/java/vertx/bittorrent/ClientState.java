@@ -6,13 +6,23 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.file.AsyncFile;
 import io.vertx.core.file.FileSystem;
 import io.vertx.core.file.OpenOptions;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -96,26 +106,101 @@ public class ClientState {
     }
 
     public Future<Void> checkPiecesOnDisk() {
-        List<Future<Buffer>> futures = new ArrayList<>((int) torrent.getPiecesCount());
+        int numThreads = Runtime.getRuntime().availableProcessors();
 
-        for (int i = 0; i < torrent.getPiecesCount(); i++) {
-            int pieceIndex = i;
+        log.debug("Checking completed pieces with {} threads ...", numThreads);
 
-            Future<Buffer> future = readPieceFromDisk(pieceIndex).onSuccess(buffer -> {
-                byte[] pieceHash = HashUtils.sha1(buffer);
+        long start = System.currentTimeMillis();
 
-                if (HashUtils.isEqual(torrent.getHashForPiece(pieceIndex), pieceHash)) {
-                    log.debug("Piece with index {} is valid", pieceIndex);
-                    bitfield.setPiece(pieceIndex);
-                } else {
-                    log.debug("Piece with index {} is invalid", pieceIndex);
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+        ExecutorCompletionService<Void> completionService = new ExecutorCompletionService<>(executor);
+
+        int piecesPerTask = (int) (torrent.getPiecesCount() / numThreads);
+        int remainingPieces = (int) (torrent.getPiecesCount() % numThreads);
+
+        Map<String, FileChannel> files = new ConcurrentHashMap<>();
+
+        for (int task = 0; task < numThreads; task++) {
+            int pieceIndex = task * piecesPerTask;
+            int numPieces = task == numThreads - 1 ? piecesPerTask + remainingPieces : piecesPerTask;
+
+            completionService.submit(() -> {
+                byte[] hashOutput = new byte[20];
+                ByteBuffer buffer = ByteBuffer.allocate((int) torrent.getPieceLength());
+
+                for (int i = pieceIndex; i < pieceIndex + numPieces; i++) {
+                    int pieceOffset = 0;
+                    int pieceLength = (int) torrent.getLengthForPiece(i);
+
+                    buffer.position(0);
+
+                    while (pieceOffset < pieceLength) {
+                        FilePosition position = torrent.getFilePositionForPiece(i, pieceOffset);
+                        FileInfo fileInfo = position.getFileInfo();
+
+                        int bytesToRead =
+                                (int) Math.min(fileInfo.getLength() - position.getOffset(), pieceLength - pieceOffset);
+
+                        buffer.limit(pieceOffset + bytesToRead);
+
+                        var file = files.computeIfAbsent(fileInfo.getPath(), path -> {
+                            try {
+                                return FileChannel.open(Path.of(path), StandardOpenOption.READ);
+                            } catch (IOException e) {
+                                throw new RuntimeException(e);
+                            }
+                        });
+
+                        try {
+                            file.read(buffer, position.getOffset());
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+
+                        pieceOffset += bytesToRead;
+                    }
+
+                    buffer.position(0);
+
+                    HashUtils.sha1(buffer, hashOutput);
+
+                    if (HashUtils.isEqual(torrent.getHashForPiece(i), hashOutput)) {
+                        log.trace("Piece with index {} is valid", i);
+
+                        synchronized (bitfield) {
+                            bitfield.setPiece(i);
+                        }
+                    } else {
+                        log.trace("Piece with index {} is invalid", i);
+                    }
                 }
+                return null;
             });
-
-            futures.add(future);
         }
 
-        return Future.all(futures).mapEmpty();
+        int finished = 0;
+        while (finished < numThreads) {
+            try {
+                completionService.take();
+                finished++;
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        for (var file : files.values()) {
+            try {
+                file.close();
+            } catch (IOException e) {
+                log.error("Error", e);
+            }
+        }
+
+        long duration = System.currentTimeMillis() - start;
+
+        log.debug("Checking pieces took {}", Duration.ofMillis(duration));
+
+        return Future.succeededFuture();
     }
 
     public Future<Buffer> readPieceFromDisk(int index) {

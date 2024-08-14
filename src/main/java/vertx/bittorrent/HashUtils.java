@@ -2,6 +2,7 @@ package vertx.bittorrent;
 
 import io.vertx.core.buffer.Buffer;
 import java.nio.ByteBuffer;
+import java.security.DigestException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
@@ -28,9 +29,31 @@ public final class HashUtils {
         return digest.digest();
     }
 
+    public static void sha1(ByteBuffer data, byte[] output) {
+        MessageDigest digest = getSha1();
+        digest.update(data);
+
+        try {
+            digest.digest(output, 0, output.length);
+        } catch (DigestException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public static byte[] sha1(Buffer buffer) {
         MessageDigest digest = getSha1();
         return digest.digest(buffer.getBytes());
+    }
+
+    public static void sha1(byte[] data, int dataOffset, int dataLength, byte[] output) {
+        MessageDigest digest = getSha1();
+        digest.update(data, dataOffset, dataLength);
+
+        try {
+            digest.digest(output, 0, output.length);
+        } catch (DigestException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static boolean isEqual(byte[] data, byte[] otherData) {

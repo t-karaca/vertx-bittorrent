@@ -17,6 +17,7 @@ import vertx.bittorrent.messages.ChokeMessage;
 import vertx.bittorrent.messages.HandshakeMessage;
 import vertx.bittorrent.messages.HaveMessage;
 import vertx.bittorrent.messages.InterestedMessage;
+import vertx.bittorrent.messages.KeepAliveMessage;
 import vertx.bittorrent.messages.Message;
 import vertx.bittorrent.messages.NotInterestedMessage;
 import vertx.bittorrent.messages.PieceMessage;
@@ -25,6 +26,8 @@ import vertx.bittorrent.messages.UnchokeMessage;
 
 @Slf4j
 public class PeerConnection {
+
+    private final long connectedAt = System.currentTimeMillis();
 
     private final NetSocket socket;
     private final ClientState clientState;
@@ -68,11 +71,34 @@ public class PeerConnection {
     private int previousBytesUploaded = 0;
 
     @Getter
-    @Setter
-    private float downloadRate = 0.0f;
+    private long lastMessageSentAt;
+
+    @Getter
+    private long lastMessageReceivedAt;
+
+    private long unchokedAt = -1;
+    private long remoteUnchokedAt = -1;
+
+    private long requestedAt = -1;
+    private long requestingDuration = 0;
+
+    private long unchokedDuration = 0;
+    private long remoteUnchokedDuration = 0;
+
+    private long interestedAt = -1;
+    private long remoteInterestedAt = -1;
+
+    private long waitingDuration = 0;
+    private long remoteWaitingDuration = 0;
+
+    @Getter
+    private long downloadedPieces = 0;
+
+    @Getter
+    private long faultyPieces = 0;
 
     private int currentRequestCount = 0;
-    private int requestLimit = 6;
+    private int requestLimit = 12;
 
     private Map<Integer, PieceState> pieceStates = new HashMap<>();
 
@@ -110,6 +136,100 @@ public class PeerConnection {
                 closedHandler.handle(null);
             }
         });
+    }
+
+    /**
+     * How long the peer has been connected to in milliseconds
+     *
+     * @return connection duration in milliseconds
+     */
+    public long getConnectionDuration() {
+        return System.currentTimeMillis() - connectedAt;
+    }
+
+    public int getRequestedPiecesCount() {
+        return pieceStates.size();
+    }
+
+    public double getUnchokedDuration() {
+        long duration = unchokedDuration;
+
+        if (unchokedAt != -1) {
+            duration += (System.currentTimeMillis() - unchokedAt);
+        }
+
+        // in seconds
+        return duration / 1000.0;
+    }
+
+    public double getRemoteUnchokedDuration() {
+        long duration = remoteUnchokedDuration;
+
+        if (remoteUnchokedAt != -1) {
+            duration += (System.currentTimeMillis() - remoteUnchokedAt);
+        }
+
+        // in seconds
+        return duration / 1000.0;
+    }
+
+    public double getRequestingDuration() {
+        long duration = requestingDuration;
+
+        if (requestedAt != -1) {
+            duration += (System.currentTimeMillis() - requestedAt);
+        }
+
+        // in seconds
+        return duration / 1000.0;
+    }
+
+    public double getAverageDownloadRate() {
+        double duration = getRequestingDuration();
+
+        if (duration == 0.0) {
+            return 0.0;
+        }
+
+        return bytesDownloaded / duration;
+    }
+
+    public double getAverageUploadRate() {
+        double duration = getUnchokedDuration();
+
+        if (duration == 0.0) {
+            return 0.0;
+        }
+
+        return bytesUploaded / duration;
+    }
+
+    public double getCurrentWaitingDuration() {
+        if (interestedAt == -1) {
+            return 0;
+        }
+
+        return (System.currentTimeMillis() - interestedAt) / 1000.0;
+    }
+
+    public double getCurrentRemoteWaitingDuration() {
+        if (remoteInterestedAt == -1) {
+            return 0;
+        }
+
+        return (System.currentTimeMillis() - remoteInterestedAt) / 1000.0;
+    }
+
+    public double getTotalWaitingDuration() {
+        return waitingDuration / 1000.0 + getCurrentWaitingDuration();
+    }
+
+    public double getTotalRemoteWaitingDuration() {
+        return remoteWaitingDuration / 1000.0 + getCurrentRemoteWaitingDuration();
+    }
+
+    public double getDurationSinceLastMessageSent() {
+        return (System.currentTimeMillis() - lastMessageSentAt) / 1000.0;
     }
 
     public boolean isPieceRequested(int index) {
@@ -181,19 +301,42 @@ public class PeerConnection {
         }
     }
 
+    public void keepAlive() {
+        sendMessage(new KeepAliveMessage());
+    }
+
     public void bitfield() {
         sendMessage(new BitfieldMessage(clientState.getBitfield()));
     }
 
     public void choke() {
         if (!choked) {
+            if (unchokedAt != -1) {
+                unchokedDuration += (System.currentTimeMillis() - unchokedAt);
+            }
+
             choked = true;
+
+            if (remoteInterested) {
+                remoteInterestedAt = System.currentTimeMillis();
+            }
+
             sendMessage(new ChokeMessage());
         }
     }
 
     public void unchoke() {
         if (choked) {
+            if (unchokedAt == -1) {
+                unchokedAt = System.currentTimeMillis();
+            }
+
+            if (remoteInterestedAt == -1) {
+                remoteWaitingDuration = (System.currentTimeMillis() - remoteInterestedAt);
+            }
+
+            remoteInterestedAt = -1;
+
             choked = false;
             sendMessage(new UnchokeMessage());
         }
@@ -201,6 +344,7 @@ public class PeerConnection {
 
     public void interested() {
         if (!interested) {
+            interestedAt = System.currentTimeMillis();
             interested = true;
             sendMessage(new InterestedMessage());
         }
@@ -208,7 +352,13 @@ public class PeerConnection {
 
     public void notInterested() {
         if (interested) {
+            if (interestedAt != -1) {
+                waitingDuration += (System.currentTimeMillis() - interestedAt);
+            }
+
+            interestedAt = -1;
             interested = false;
+
             sendMessage(new NotInterestedMessage());
         }
     }
@@ -262,6 +412,11 @@ public class PeerConnection {
                         pieceState.setBlockState(i, BlockState.Requested);
                         sendMessage(new RequestMessage(
                                 pieceIndex, pieceState.getBlockOffset(i), pieceState.getBlockSize(i)));
+
+                        if (requestedAt == -1) {
+                            requestedAt = System.currentTimeMillis();
+                        }
+
                         break pieces;
                     }
                 }
@@ -270,6 +425,8 @@ public class PeerConnection {
     }
 
     private void handleProtocolMessage(Message message) {
+        lastMessageReceivedAt = System.currentTimeMillis();
+
         log.debug("[{}] Received {}", peer, message);
 
         if (message instanceof HandshakeMessage handshakeMessage) {
@@ -287,13 +444,32 @@ public class PeerConnection {
                 bitfieldHandler.handle(bitfield);
             }
         } else if (message instanceof ChokeMessage) {
+            if (remoteUnchokedAt != -1) {
+                remoteUnchokedDuration += (System.currentTimeMillis() - remoteUnchokedAt);
+                remoteUnchokedAt = -1;
+            }
+
             remoteChoked = true;
+
+            if (interested) {
+                interestedAt = System.currentTimeMillis();
+            }
 
             if (chokedHandler != null) {
                 chokedHandler.handle(null);
             }
         } else if (message instanceof UnchokeMessage) {
+            if (interestedAt != -1) {
+                waitingDuration += (System.currentTimeMillis() - interestedAt);
+            }
+
+            if (remoteUnchokedAt == -1) {
+                remoteUnchokedAt = System.currentTimeMillis();
+            }
+
             remoteChoked = false;
+
+            interestedAt = -1;
 
             if (unchokedHandler != null) {
                 unchokedHandler.handle(null);
@@ -301,11 +477,19 @@ public class PeerConnection {
         } else if (message instanceof InterestedMessage) {
             remoteInterested = true;
 
+            remoteInterestedAt = System.currentTimeMillis();
+
             if (interestedHandler != null) {
                 interestedHandler.handle(null);
             }
         } else if (message instanceof NotInterestedMessage) {
+            if (remoteInterestedAt != -1) {
+                remoteWaitingDuration += (System.currentTimeMillis() - remoteInterestedAt);
+            }
+
             remoteInterested = false;
+
+            remoteInterestedAt = -1;
 
             if (notInterestedHandler != null) {
                 notInterestedHandler.handle(null);
@@ -339,7 +523,14 @@ public class PeerConnection {
                     pieceState.setBlockStateByOffset(begin, BlockState.Downloaded);
                     currentRequestCount--;
 
+                    if (currentRequestCount <= 0 && requestedAt != -1) {
+                        requestingDuration += (System.currentTimeMillis() - requestedAt);
+                        requestedAt = -1;
+                    }
+
                     if (pieceState.isCompleted()) {
+                        downloadedPieces++;
+
                         pieceStates.remove(pieceIndex);
 
                         byte[] hash = HashUtils.sha1(pieceState.getData());
@@ -352,6 +543,10 @@ public class PeerConnection {
                                 .hash(hash)
                                 .hashValid(hashValid)
                                 .build();
+
+                        if (!hashValid) {
+                            faultyPieces++;
+                        }
 
                         if (pieceHandler != null) {
                             pieceHandler.handle(piece);
@@ -370,7 +565,9 @@ public class PeerConnection {
         }
 
         log.debug("[{}] Sending {}", peer, message);
-        return socket.write(message.toBuffer());
+        return socket.write(message.toBuffer()).onSuccess(v -> {
+            lastMessageSentAt = System.currentTimeMillis();
+        });
     }
 
     public static Future<PeerConnection> connect(NetClient client, ClientState clientState, Peer peer) {

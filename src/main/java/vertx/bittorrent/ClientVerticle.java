@@ -10,6 +10,7 @@ import io.vertx.core.net.NetServer;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -32,7 +33,8 @@ public class ClientVerticle extends AbstractVerticle {
     private NetServer netServer;
 
     private int maxConnections = 50;
-    private int maxLeechingPeers = 6;
+    private int maxLeechingPeers = 3;
+    private int maxOptimisticLeechingPeers = 1;
 
     private SecureRandom random = new SecureRandom();
 
@@ -129,6 +131,55 @@ public class ClientVerticle extends AbstractVerticle {
                     connections.size(),
                     seeding,
                     leeching);
+        });
+
+        vertx.setPeriodic(10_000, id -> {
+            log.info("Starting unchoke cycle");
+
+            var unchokedPeers = connections.stream()
+                    .filter(connection -> !connection.isChoked())
+                    .peek(connection -> log.info(
+                            "[{}] Unchoked peer found with downloadRate: {}/s",
+                            connection.getPeer().getAddress().port(),
+                            ByteFormat.format(connection.getAverageDownloadRate())))
+                    .toList();
+
+            var peersToUnchoke = connections.stream()
+                    .filter(PeerConnection::isRemoteInterested)
+                    .sorted(Comparator.comparingDouble(PeerConnection::getAverageDownloadRate)
+                            .reversed())
+                    .limit(maxLeechingPeers)
+                    .peek(PeerConnection::unchoke)
+                    .peek(connection -> log.info(
+                            "[{}] Unchoking peer with downloadRate: {}/s",
+                            connection.getPeer().getAddress().port(),
+                            ByteFormat.format(connection.getAverageDownloadRate())))
+                    .toList();
+
+            for (var peer : unchokedPeers) {
+                if (!peersToUnchoke.contains(peer)) {
+                    peer.choke();
+                    log.info(
+                            "[{}] Choking peer with downloadRate: {}/s",
+                            peer.getPeer().getAddress().port(),
+                            ByteFormat.format(peer.getAverageDownloadRate()));
+                }
+            }
+
+            log.info("End unchoke cycle");
+        });
+
+        vertx.setPeriodic(30_000, id -> {
+            var chokedPeers = connections.stream()
+                    .filter(connection -> connection.isRemoteInterested() && connection.isChoked())
+                    .toList();
+
+            var connection = chokedPeers.get(random.nextInt(chokedPeers.size()));
+
+            log.info(
+                    "[{}] Optimistic unchoking peer",
+                    connection.getPeer().getAddress().port());
+            connection.unchoke();
         });
     }
 

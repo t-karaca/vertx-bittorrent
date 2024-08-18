@@ -21,7 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class ClientVerticle extends AbstractVerticle {
 
-    private final String torrentFileName;
+    private final ClientOptions clientOptions;
 
     private final List<PeerConnection> connections = new ArrayList<>();
     private final Set<Integer> processingPieces = new HashSet<>();
@@ -47,6 +47,7 @@ public class ClientVerticle extends AbstractVerticle {
     public void start() throws Exception {
         FileSystem fs = vertx.fileSystem();
 
+        String torrentFileName = clientOptions.getTorrentFilePath();
         if (!fs.existsBlocking(torrentFileName)) {
             log.error("Could not find torrent file at: {}", torrentFileName);
             vertx.close();
@@ -88,12 +89,15 @@ public class ClientVerticle extends AbstractVerticle {
             setupPeerConnection(connection);
         });
 
-        clientState.checkPiecesOnDisk().flatMap(v -> netServer.listen(12345)).onSuccess(server -> {
-            log.info("Listening on port {}", server.actualPort());
-            clientState.setServerPort(server.actualPort());
+        clientState
+                .checkPiecesOnDisk()
+                .flatMap(v -> netServer.listen(clientOptions.getServerPort()))
+                .onSuccess(server -> {
+                    log.info("Listening on port {}", server.actualPort());
+                    clientState.setServerPort(server.actualPort());
 
-            tracker.announce();
-        });
+                    tracker.announce();
+                });
 
         timerId = vertx.setPeriodic(1_000, id -> {
             double totalDownloadRate = 0.0;

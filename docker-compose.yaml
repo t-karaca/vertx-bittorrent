@@ -1,0 +1,44 @@
+version: "3.3"
+
+services:
+  opentracker:
+    image: opentracker
+  node-1:
+    image: vertx-bittorrent
+    hostname: node-1
+    volumes:
+      - ./torrents:/torrents
+      - ./data/node-1:/data
+      - ./src/main/resources/test-data/:/train
+    environment:
+      - >-
+        EXTRA_OPTS=--images-path /train/t10k-images-idx3-ubyte
+        --labels-path /train/t10k-labels-idx1-ubyte
+      - NODE_ID=1
+    cap_add:
+      - NET_ADMIN
+  node-2:
+    image: vertx-bittorrent
+    hostname: node-2
+    volumes:
+      - ./torrents:/torrents
+      - ./data/node-2:/data
+      - ./src/main/resources/train/:/train
+    environment:
+      - >-
+        EXTRA_OPTS=--images-path /train/train-images-idx3-ubyte
+        --labels-path /train/train-labels-idx1-ubyte
+      - NODE_ID=2
+    cap_add:
+      - NET_ADMIN
+  node-3:
+    image: vertx-bittorrent
+    hostname: node-3
+    environment:
+      - VB_IS_FREE_RIDER=true
+      - NODE_ID=3
+    volumes:
+      - ./torrents:/torrents
+      - ./data/node-3:/data
+    cap_add:
+      - NET_ADMIN

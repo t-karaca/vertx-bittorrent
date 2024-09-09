@@ -31,6 +31,7 @@ public class PeerConnection {
 
     private final NetSocket socket;
     private final ClientState clientState;
+    private final TorrentState torrentState;
 
     @Getter
     private final Peer peer;
@@ -113,12 +114,13 @@ public class PeerConnection {
     private Handler<Integer> hasPieceHandler;
     private Handler<Void> closedHandler;
 
-    public PeerConnection(NetSocket socket, ClientState clientState, Peer peer) {
+    public PeerConnection(NetSocket socket, ClientState clientState, TorrentState torrentState, Peer peer) {
         this.socket = socket;
         this.clientState = clientState;
+        this.torrentState = torrentState;
         this.peer = peer;
 
-        this.bitfield = Bitfield.fromSize((int) clientState.getTorrent().getPiecesCount());
+        this.bitfield = Bitfield.fromSize((int) torrentState.getTorrent().getPiecesCount());
 
         socket.exceptionHandler(ex -> {
             log.error("[{}] Error", peer, ex);
@@ -297,7 +299,7 @@ public class PeerConnection {
     public void handshake() {
         if (!handshakeSent) {
             handshakeSent = true;
-            sendMessage(new HandshakeMessage(0L, clientState.getTorrent().getInfoHash(), clientState.getPeerId()));
+            sendMessage(new HandshakeMessage(0L, torrentState.getTorrent().getInfoHash(), clientState.getPeerId()));
         }
     }
 
@@ -306,7 +308,7 @@ public class PeerConnection {
     }
 
     public void bitfield() {
-        sendMessage(new BitfieldMessage(clientState.getBitfield()));
+        sendMessage(new BitfieldMessage(torrentState.getBitfield()));
     }
 
     public void choke() {
@@ -367,15 +369,15 @@ public class PeerConnection {
         sendMessage(new HaveMessage(index));
     }
 
-    public void piece(int index, int begin, Buffer data) {
-        sendMessage(new PieceMessage(index, begin, data)).onSuccess(v -> {
+    public Future<Void> piece(int index, int begin, Buffer data) {
+        return sendMessage(new PieceMessage(index, begin, data)).onSuccess(v -> {
             bytesUploaded += data.length();
         });
     }
 
     public void requestPiece(int pieceIndex) {
         if (!pieceStates.containsKey(pieceIndex)) {
-            long pieceLength = clientState.getTorrent().getLengthForPiece(pieceIndex);
+            long pieceLength = torrentState.getTorrent().getLengthForPiece(pieceIndex);
 
             pieceStates.put(pieceIndex, new PieceState(pieceLength));
 
@@ -534,7 +536,7 @@ public class PeerConnection {
                         pieceStates.remove(pieceIndex);
 
                         byte[] hash = HashUtils.sha1(pieceState.getData());
-                        ByteBuffer pieceHash = clientState.getTorrent().getHashForPiece(pieceIndex);
+                        ByteBuffer pieceHash = torrentState.getTorrent().getHashForPiece(pieceIndex);
                         boolean hashValid = HashUtils.isEqual(hash, pieceHash);
 
                         Piece piece = Piece.builder()
@@ -570,12 +572,13 @@ public class PeerConnection {
         });
     }
 
-    public static Future<PeerConnection> connect(NetClient client, ClientState clientState, Peer peer) {
+    public static Future<PeerConnection> connect(
+            NetClient client, ClientState clientState, TorrentState torrentState, Peer peer) {
         log.debug("[{}] Trying to connect to peer", peer);
 
         return client.connect(peer.getAddress())
                 .onFailure(ex -> log.error("[{}] Could not connect to peer: {}", peer, ex.getMessage()))
-                .map(socket -> new PeerConnection(socket, clientState, peer))
+                .map(socket -> new PeerConnection(socket, clientState, torrentState, peer))
                 .onSuccess(conn -> log.info("[{}] Connected to peer", peer))
                 .onSuccess(conn -> conn.handshake());
     }

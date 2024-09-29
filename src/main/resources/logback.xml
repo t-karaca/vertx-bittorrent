@@ -11,6 +11,8 @@
     <!-- <logger name="vertx.bittorrent" level="DEBUG"/> -->
     <!-- <logger name="vertx.bittorrent" level="INFO"/> -->
 
+    <logger name="vertx.bittorrent.dht" level="DEBUG" />
+
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
     </root>

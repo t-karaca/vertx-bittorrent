@@ -67,4 +67,8 @@ public final class HashUtils {
     public static boolean isEqual(byte[] data, ByteBuffer otherData) {
         return isEqual(otherData, data);
     }
+
+    public static boolean hashEquals(ByteBuffer data, byte[] hash) {
+        return isEqual(sha1(data), hash);
+    }
 }

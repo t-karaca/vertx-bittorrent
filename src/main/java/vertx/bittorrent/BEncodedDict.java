@@ -5,7 +5,9 @@ import be.adaxisoft.bencode.BEncoder;
 import be.adaxisoft.bencode.InvalidBEncodingException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -16,12 +18,48 @@ public class BEncodedDict {
 
     private final Map<String, BEncodedValue> map;
 
+    public BEncodedDict() {
+        this.map = new HashMap<>();
+    }
+
     public BEncodedDict(BEncodedValue value) throws InvalidBEncodingException {
         this.map = value.getMap();
     }
 
+    public void put(String key, String value) {
+        try {
+            map.put(key, new BEncodedValue(value));
+        } catch (UnsupportedEncodingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void put(String key, int value) {
+        map.put(key, new BEncodedValue(value));
+    }
+
+    public void put(String key, long value) {
+        map.put(key, new BEncodedValue(value));
+    }
+
+    public void put(String key, byte[] value) {
+        map.put(key, new BEncodedValue(value));
+    }
+
+    public void put(String key, BEncodedValue value) {
+        map.put(key, value);
+    }
+
+    public void put(String key, List<BEncodedValue> value) {
+        map.put(key, new BEncodedValue(value));
+    }
+
     public Optional<Object> findValue(String key) {
         return Optional.ofNullable(map.get(key)).map(BEncodedValue::getValue);
+    }
+
+    public Optional<BEncodedValue> findBEncodedValue(String key) {
+        return Optional.ofNullable(map.get(key));
     }
 
     public Optional<String> findString(String key) {
@@ -84,6 +122,10 @@ public class BEncodedDict {
         });
     }
 
+    public BEncodedValue requireBEncodedValue(String key) {
+        return findBEncodedValue(key).orElseThrow(() -> missingFieldException(key));
+    }
+
     public String requireString(String key) {
         return findString(key).orElseThrow(() -> missingFieldException(key));
     }
@@ -114,6 +156,10 @@ public class BEncodedDict {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    public BEncodedValue toValue() {
+        return new BEncodedValue(map);
     }
 
     private IllegalArgumentException missingFieldException(String key) {

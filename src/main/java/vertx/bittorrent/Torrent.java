@@ -11,13 +11,17 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import lombok.Builder;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Getter
+@Builder
 @ToString
+@RequiredArgsConstructor
 public class Torrent {
 
     public static final int DIGEST_LENGTH = 20;
@@ -40,7 +44,7 @@ public class Torrent {
     public Torrent(BEncodedValue value) throws IOException {
         BEncodedDict dict = new BEncodedDict(value);
 
-        announce = dict.requireString("announce");
+        announce = dict.findString("announce").orElse(null);
 
         comment = dict.findString("comment").orElse("");
         createdBy = dict.findString("created by").orElse(null);

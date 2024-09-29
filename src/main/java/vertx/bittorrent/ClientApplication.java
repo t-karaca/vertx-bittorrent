@@ -20,6 +20,7 @@ public class ClientApplication {
         }
 
         var vertx = Vertx.vertx(new VertxOptions().setBlockedThreadCheckInterval(1000 * 60 * 60));
+        // var vertx = Vertx.vertx();
 
         vertx.deployVerticle(new ClientVerticle(clientOptions));
 

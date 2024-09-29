@@ -56,7 +56,7 @@ public class TrackerResponse {
         }
     }
 
-    private static Collection<Peer> parsePeers4(Object value) {
+    public static Collection<Peer> parsePeers4(Object value) {
         if (value instanceof byte[] bytes) {
 
             return parsePeersFromBytes(bytes, 4);
@@ -77,11 +77,11 @@ public class TrackerResponse {
         }
     }
 
-    private static Collection<Peer> parsePeers6(byte[] bytes) {
+    public static Collection<Peer> parsePeers6(byte[] bytes) {
         return parsePeersFromBytes(bytes, 16);
     }
 
-    private static Collection<Peer> parsePeersFromBytes(byte[] bytes, int addressLength) {
+    public static Collection<Peer> parsePeersFromBytes(byte[] bytes, int addressLength) {
         List<Peer> peers = new ArrayList<>();
 
         int entryLength = addressLength + 2;

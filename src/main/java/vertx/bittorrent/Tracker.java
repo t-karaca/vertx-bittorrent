@@ -8,7 +8,10 @@ import io.vertx.core.http.HttpClientRequest;
 import io.vertx.core.http.HttpClientResponse;
 import io.vertx.core.http.RequestOptions;
 import java.net.URI;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
@@ -17,16 +20,22 @@ public class Tracker {
 
     private final Vertx vertx;
     private final ClientState clientState;
+    private final TorrentState torrentState;
 
     private final HttpClient httpClient;
 
-    private long timerId;
+    @Getter
+    private final Set<Peer> peers = new HashSet<>();
+
+    private long timerId = 0;
+    private boolean closing = false;
 
     private Handler<List<Peer>> peersHandler;
 
-    public Tracker(Vertx vertx, ClientState clientState) {
+    public Tracker(Vertx vertx, ClientState clientState, TorrentState torrentState) {
         this.vertx = vertx;
         this.clientState = clientState;
+        this.torrentState = torrentState;
 
         this.httpClient = vertx.createHttpClient();
     }
@@ -37,6 +46,8 @@ public class Tracker {
     }
 
     public Future<Void> announce() {
+        closing = false;
+
         return request("started")
                 .onSuccess(response -> {
                     timerId = vertx.setPeriodic(response.getInterval() * 1000, id -> request(null));
@@ -51,19 +62,21 @@ public class Tracker {
     public Future<Void> close() {
         vertx.cancelTimer(timerId);
 
+        closing = true;
+
         return request("stopped").mapEmpty();
     }
 
     private Future<TrackerResponse> request(String event) {
-        Torrent torrent = clientState.getTorrent();
+        Torrent torrent = torrentState.getTorrent();
 
         UriBuilder builder = UriBuilder.fromUriString(torrent.getAnnounce())
                 .queryParam("info_hash", torrent.getInfoHash())
-                .queryParam("port", clientState.getServerPort())
+                .queryParam("port", torrentState.getServerPort())
                 .queryParam("peer_id", clientState.getPeerId())
                 .queryParam("uploaded", clientState.getTotalBytesUploaded())
                 .queryParam("downloaded", clientState.getTotalBytesDownloaded())
-                .queryParam("left", clientState.getRemainingBytes());
+                .queryParam("left", torrentState.getRemainingBytes());
 
         if (StringUtils.isNotBlank(event)) {
             builder.queryParam("event", event);
@@ -81,8 +94,12 @@ public class Tracker {
                 .map(TrackerResponse::fromBuffer)
                 .onFailure(e -> log.error("Error while requesting from tracker:", e))
                 .onSuccess(response -> {
-                    if (peersHandler != null) {
-                        peersHandler.handle(response.getPeers());
+                    if (!closing) {
+                        response.getPeers().forEach(peers::add);
+
+                        if (peersHandler != null) {
+                            peersHandler.handle(response.getPeers());
+                        }
                     }
                 });
     }

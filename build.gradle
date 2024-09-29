@@ -33,6 +33,8 @@ dependencies {
     implementation "ch.qos.logback:logback-core:${logbackVersion}"
     implementation "ch.qos.logback:logback-classic:${logbackVersion}"
 
+    implementation "com.fasterxml.jackson.core:jackson-databind:2.17.2"
+
     implementation "io.vertx:vertx-core:${vertxVersion}"
     implementation "io.vertx:vertx-config:${vertxVersion}"
     implementation "io.vertx:vertx-config-yaml:${vertxVersion}"

@@ -2,8 +2,10 @@ package vertx.bittorrent;
 
 import com.beust.jcommander.Parameter;
 import lombok.Getter;
+import lombok.ToString;
 
 @Getter
+@ToString
 public class ClientOptions {
     @Parameter(names = "--id")
     private int id;

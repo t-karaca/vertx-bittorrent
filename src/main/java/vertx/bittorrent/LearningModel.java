@@ -55,8 +55,8 @@ public class LearningModel {
 
     public void createTorrent() {
         try {
-            String torrentFilePath = "/torrents/" + "node-" + id + "-weights.torrent";
-            File weightsFile = new File("/data/" + "node-" + id + "-weights.dat");
+            String torrentFilePath = "./torrents/" + "node-" + id + "-weights.torrent";
+            File weightsFile = new File("./data/" + "node-" + id + "-weights.dat");
             Files.write(weightsFile.toPath(), encodeWeights(weights).getBytes());
 
             com.turn.ttorrent.common.Torrent torrent = com.turn.ttorrent.common.Torrent.create(

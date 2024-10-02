@@ -10,7 +10,7 @@ WORKDIR /app
 # ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk
 
 # CMD sysctl -w kernel.core_pattern=/coredump/core-%e.%p.%h.%t && tc qdisc add dev eth0 root tbf rate 128kbps burst 10kb latency 50ms && /app/vertx-bittorrent/bin/vertx-bittorrent --id 1 --torrent-dir /torrents --data-dir /data ${EXTRA_OPTS}
-CMD tc qdisc add dev eth0 root tbf rate 128kbps burst 10kb latency 50ms && /app/vertx-bittorrent/bin/vertx-bittorrent --id ${NODE_ID} --torrent-dir /torrents --data-dir /data ${EXTRA_OPTS}
+CMD tc qdisc add dev eth0 root tbf rate 128kbps burst 10kb latency 50ms && /app/vertx-bittorrent/bin/vertx-bittorrent --id ${NODE_ID} --torrent-dir ./torrents --data-dir ./data ${EXTRA_OPTS}
 
 
 # FROM amazoncorretto:17-alpine3.20-full

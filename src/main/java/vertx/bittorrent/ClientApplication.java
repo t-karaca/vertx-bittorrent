@@ -12,6 +12,7 @@ public class ClientApplication {
 
         ClientOptions clientOptions = new ClientOptions();
         JCommander.newBuilder().addObject(clientOptions).build().parse(args);
+        log.info("Options: {}", clientOptions);
 
         // if (StringUtils.isBlank(clientOptions.getTorrentFilePath())) {
         //     log.error("No arguments specified.\n\nUsage: vertx-bittorrent <file>");
@@ -26,6 +27,7 @@ public class ClientApplication {
         // }
 
         var vertx = Vertx.vertx(new VertxOptions().setBlockedThreadCheckInterval(1000 * 60 * 60));
+        vertx.exceptionHandler(e -> log.error("Unhandled exception: ", e));
 
         // if (!vertx.fileSystem().existsBlocking(clientOptions.getTorrentDir())) {
         // }

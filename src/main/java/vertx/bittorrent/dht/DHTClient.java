@@ -73,7 +73,7 @@ public class DHTClient {
             tableUpdated = true;
         });
 
-        log.info("Node id: {}", routingTable.getNodeId().toHexString());
+        log.info("Node id: {}", routingTable.getNodeId());
 
         protocolHandler.onQuery(DHTPingQuery.class, (sender, query) -> {
             routingTable.refreshNode(query.getNodeId(), sender);
@@ -217,7 +217,7 @@ public class DHTClient {
 
         DHTNode node = bucket.getRandomNode();
 
-        log.debug("Asking for further nodes on id {} from {}", target.toHexString(), node);
+        log.debug("Asking for further nodes on id {} from {}", target, node);
 
         protocolHandler
                 .query(
@@ -255,7 +255,7 @@ public class DHTClient {
 
         // DHTNode node = bucket.getRandomNode();
 
-        log.debug("Asking for further nodes on id {} from {}", target.toHexString(), node);
+        log.debug("Asking for further nodes on id {} from {}", target, node);
 
         protocolHandler
                 .query(

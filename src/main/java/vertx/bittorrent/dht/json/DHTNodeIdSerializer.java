@@ -13,6 +13,6 @@ public class DHTNodeIdSerializer extends StdSerializer<DHTNodeId> {
 
     @Override
     public void serialize(DHTNodeId nodeId, JsonGenerator generator, SerializerProvider serializer) throws IOException {
-        generator.writeString(nodeId.toHexString());
+        generator.writeString(nodeId.toString());
     }
 }

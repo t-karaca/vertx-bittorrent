@@ -147,7 +147,7 @@ public class DHTBucket {
     }
 
     public DHTBucket split() {
-        DHTNodeId mid = min.withBitAt(splitLevel, true);
+        DHTNodeId mid = min.withBitAt(splitLevel);
 
         splitLevel++;
 

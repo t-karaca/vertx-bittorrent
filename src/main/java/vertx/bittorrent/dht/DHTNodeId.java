@@ -1,105 +1,54 @@
 package vertx.bittorrent.dht;
 
+import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.util.Arrays;
-import java.util.HexFormat;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
+import java.util.Random;
 
-@Getter
-@RequiredArgsConstructor
 public class DHTNodeId implements Comparable<DHTNodeId> {
-    public static final DHTNodeId MIN;
-    public static final DHTNodeId MAX;
-
     public static final int NUM_BYTES = 20;
+    public static final int NUM_BITS = NUM_BYTES * 8;
+    public static final int HEX_LENGTH = NUM_BYTES * 2;
 
-    private final byte[] bytes;
+    public static final DHTNodeId MIN = new DHTNodeId(BigInteger.ZERO);
+    public static final DHTNodeId MAX = new DHTNodeId(BigInteger.ZERO.setBit(NUM_BITS));
 
-    static {
-        MIN = new DHTNodeId(new byte[NUM_BYTES]);
-        MAX = new DHTNodeId(new byte[NUM_BYTES + 1]);
+    private static final Random RANDOM = new SecureRandom();
 
-        MAX.bytes[0] = 1;
+    private final BigInteger bigInt;
+
+    public DHTNodeId(BigInteger bigInteger) {
+        this.bigInt = bigInteger;
     }
 
-    public DHTNodeId half() {
-        byte[] newBytes = Arrays.copyOf(bytes, bytes.length);
-
-        boolean carryOver = false;
-        for (int i = 0; i < newBytes.length; i++) {
-            newBytes[i] = (byte) ((newBytes[i] & 0xFF) >> 1);
-
-            if (carryOver) {
-                newBytes[i] |= 0x80;
-                carryOver = false;
-            }
-
-            if ((bytes[i] & 0x1) == 0x1) {
-                carryOver = true;
-            }
-        }
-
-        return new DHTNodeId(newBytes);
-    }
-
-    public DHTNodeId distance(DHTNodeId target) {
-        return new DHTNodeId(UnsignedNumber.distance(bytes, target.bytes));
-    }
-
-    public DHTNodeId withBitAt(int index, boolean value) {
-        if (this == MAX) {
-            return MIN.withBitAt(index, value);
-        }
-
-        byte[] newBytes = Arrays.copyOf(bytes, bytes.length);
-
-        int byteIndex = index / 8;
-
-        if (byteIndex < 0 || byteIndex >= bytes.length) {
-            throw new IndexOutOfBoundsException();
-        }
-
-        int bitIndex = index % 8;
-
-        if (value) {
-            newBytes[byteIndex] = (byte) ((newBytes[byteIndex] & 0xFF) | (0x80 >>> bitIndex));
-        } else {
-            newBytes[byteIndex] = (byte) ((newBytes[byteIndex] & 0xFF) & ~(0x80 >>> bitIndex));
-        }
-
-        return new DHTNodeId(newBytes);
+    public DHTNodeId(byte[] bytes) {
+        this.bigInt = new BigInteger(1, bytes);
     }
 
     @Override
     public String toString() {
-        return toHexString();
-    }
+        String hex = bigInt.toString(16);
 
-    public String toHexString() {
-        return HexFormat.of().formatHex(bytes);
+        int padding = HEX_LENGTH - hex.length();
+        if (padding > 0) {
+            // hex string is shorter than 40 characters
+            StringBuilder builder = new StringBuilder(HEX_LENGTH);
+
+            for (int i = 0; i < padding; i++) {
+                builder.append('0');
+            }
+
+            builder.append(hex);
+
+            hex = builder.toString();
+        }
+
+        return hex;
     }
 
     @Override
     public int compareTo(DHTNodeId o) {
-        return UnsignedNumber.compare(bytes, o.bytes);
-        // int numBytes = Math.max(bytes.length, o.bytes.length);
-        //
-        // int leftPadding = Math.max(o.bytes.length - bytes.length, 0);
-        // int rightPadding = Math.max(bytes.length - o.bytes.length, 0);
-        //
-        // for (int i = 0; i < numBytes; i++) {
-        //     byte left = i < leftPadding ? 0 : bytes[i - leftPadding];
-        //     byte right = i < rightPadding ? 0 : o.bytes[i - rightPadding];
-        //
-        //     int res = Byte.compareUnsigned(left, right);
-        //
-        //     if (res != 0) {
-        //         return res;
-        //     }
-        // }
-        //
-        // return 0;
+        return bigInt.compareTo(o.bigInt);
     }
 
     @Override
@@ -117,7 +66,40 @@ public class DHTNodeId implements Comparable<DHTNodeId> {
 
     @Override
     public int hashCode() {
-        return Arrays.hashCode(bytes);
+        return bigInt.hashCode();
+    }
+
+    public byte[] getBytes() {
+        byte[] bytes = bigInt.toByteArray();
+
+        int padding = NUM_BYTES - bytes.length;
+        if (padding > 0) {
+            // we have less than 20 bytes, padding with zeroes required
+            byte[] b = new byte[NUM_BYTES];
+
+            System.arraycopy(bytes, 0, b, padding, bytes.length);
+
+            return b;
+        } else if (padding < 0) {
+            // we have more than 20 bytes, because of an extra byte for the sign bit from BigInteger
+            return Arrays.copyOfRange(bytes, -padding, bytes.length);
+        }
+
+        return bytes;
+    }
+
+    public DHTNodeId distance(DHTNodeId target) {
+        return new DHTNodeId(bigInt.xor(target.bigInt));
+    }
+
+    public DHTNodeId withBitAt(int index) {
+        if (index >= NUM_BITS) {
+            throw new IndexOutOfBoundsException();
+        }
+
+        int i = NUM_BITS - index - 1;
+
+        return new DHTNodeId(bigInt.setBit(i));
     }
 
     public boolean lessThan(DHTNodeId o) {
@@ -137,30 +119,22 @@ public class DHTNodeId implements Comparable<DHTNodeId> {
     }
 
     public static DHTNodeId random() {
-        byte[] bytes = new byte[NUM_BYTES];
-
-        var random = new SecureRandom();
-
-        random.nextBytes(bytes);
-
-        return new DHTNodeId(bytes);
+        return new DHTNodeId(new BigInteger(NUM_BITS, RANDOM));
     }
 
     public static DHTNodeId random(DHTNodeId min, DHTNodeId max) {
-        byte[] bytes = new byte[NUM_BYTES];
+        BigInteger range = max.bigInt.subtract(min.bigInt);
 
-        var random = new SecureRandom();
+        BigInteger value;
 
         do {
-            random.nextBytes(bytes);
-        } while (UnsignedNumber.lessThan(bytes, min.bytes) || UnsignedNumber.greaterOrEquals(bytes, max.bytes));
+            value = new BigInteger(range.bitLength(), RANDOM);
+        } while (value.compareTo(range) >= 0);
 
-        return new DHTNodeId(bytes);
+        return new DHTNodeId(min.bigInt.add(value));
     }
 
     public static DHTNodeId fromHex(String hex) {
-        byte[] bytes = HexFormat.of().parseHex(hex);
-
-        return new DHTNodeId(bytes);
+        return new DHTNodeId(new BigInteger(hex, 16));
     }
 }

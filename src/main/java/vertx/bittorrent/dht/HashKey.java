@@ -1,27 +1,28 @@
 package vertx.bittorrent.dht;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Random;
 
-public class DHTNodeId implements Comparable<DHTNodeId> {
+public class HashKey implements Comparable<HashKey> {
     public static final int NUM_BYTES = 20;
     public static final int NUM_BITS = NUM_BYTES * 8;
     public static final int HEX_LENGTH = NUM_BYTES * 2;
 
-    public static final DHTNodeId MIN = new DHTNodeId(BigInteger.ZERO);
-    public static final DHTNodeId MAX = new DHTNodeId(BigInteger.ZERO.setBit(NUM_BITS));
+    public static final HashKey MIN = new HashKey(BigInteger.ZERO);
+    public static final HashKey MAX = new HashKey(BigInteger.ZERO.setBit(NUM_BITS));
 
     private static final Random RANDOM = new SecureRandom();
 
     private final BigInteger bigInt;
 
-    public DHTNodeId(BigInteger bigInteger) {
+    public HashKey(BigInteger bigInteger) {
         this.bigInt = bigInteger;
     }
 
-    public DHTNodeId(byte[] bytes) {
+    public HashKey(byte[] bytes) {
         this.bigInt = new BigInteger(1, bytes);
     }
 
@@ -47,7 +48,7 @@ public class DHTNodeId implements Comparable<DHTNodeId> {
     }
 
     @Override
-    public int compareTo(DHTNodeId o) {
+    public int compareTo(HashKey o) {
         return bigInt.compareTo(o.bigInt);
     }
 
@@ -57,7 +58,7 @@ public class DHTNodeId implements Comparable<DHTNodeId> {
             return true;
         }
 
-        if (obj instanceof DHTNodeId otherId) {
+        if (obj instanceof HashKey otherId) {
             return compareTo(otherId) == 0;
         }
 
@@ -88,41 +89,41 @@ public class DHTNodeId implements Comparable<DHTNodeId> {
         return bytes;
     }
 
-    public DHTNodeId distance(DHTNodeId target) {
-        return new DHTNodeId(bigInt.xor(target.bigInt));
+    public HashKey distance(HashKey target) {
+        return new HashKey(bigInt.xor(target.bigInt));
     }
 
-    public DHTNodeId withBitAt(int index) {
+    public HashKey withBitAt(int index) {
         if (index >= NUM_BITS) {
             throw new IndexOutOfBoundsException();
         }
 
         int i = NUM_BITS - index - 1;
 
-        return new DHTNodeId(bigInt.setBit(i));
+        return new HashKey(bigInt.setBit(i));
     }
 
-    public boolean lessThan(DHTNodeId o) {
+    public boolean lessThan(HashKey o) {
         return compareTo(o) < 0;
     }
 
-    public boolean lessOrEquals(DHTNodeId o) {
+    public boolean lessOrEquals(HashKey o) {
         return compareTo(o) <= 0;
     }
 
-    public boolean greaterThan(DHTNodeId o) {
+    public boolean greaterThan(HashKey o) {
         return compareTo(o) > 0;
     }
 
-    public boolean greaterOrEquals(DHTNodeId o) {
+    public boolean greaterOrEquals(HashKey o) {
         return compareTo(o) >= 0;
     }
 
-    public static DHTNodeId random() {
-        return new DHTNodeId(new BigInteger(NUM_BITS, RANDOM));
+    public static HashKey random() {
+        return new HashKey(new BigInteger(NUM_BITS, RANDOM));
     }
 
-    public static DHTNodeId random(DHTNodeId min, DHTNodeId max) {
+    public static HashKey random(HashKey min, HashKey max) {
         BigInteger range = max.bigInt.subtract(min.bigInt);
 
         BigInteger value;
@@ -131,10 +132,18 @@ public class DHTNodeId implements Comparable<DHTNodeId> {
             value = new BigInteger(range.bitLength(), RANDOM);
         } while (value.compareTo(range) >= 0);
 
-        return new DHTNodeId(min.bigInt.add(value));
+        return new HashKey(min.bigInt.add(value));
     }
 
-    public static DHTNodeId fromHex(String hex) {
-        return new DHTNodeId(new BigInteger(hex, 16));
+    public static HashKey fromHex(String hex) {
+        return new HashKey(new BigInteger(hex, 16));
+    }
+
+    public static HashKey fromString(String id) {
+        return fromBytes(id.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static HashKey fromBytes(byte[] bytes) {
+        return new HashKey(bytes);
     }
 }

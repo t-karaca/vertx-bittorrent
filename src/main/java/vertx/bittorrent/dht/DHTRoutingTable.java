@@ -23,9 +23,9 @@ import java.util.Optional;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import vertx.bittorrent.Peer;
-import vertx.bittorrent.dht.json.DHTNodeIdDeserializer;
-import vertx.bittorrent.dht.json.DHTNodeIdKeyDeserializer;
-import vertx.bittorrent.dht.json.DHTNodeIdSerializer;
+import vertx.bittorrent.dht.json.HashKeyDeserializer;
+import vertx.bittorrent.dht.json.HashKeyKeyDeserializer;
+import vertx.bittorrent.dht.json.HashKeySerializer;
 import vertx.bittorrent.dht.json.SocketAddressDeserializer;
 import vertx.bittorrent.dht.json.SocketAddressSerializer;
 
@@ -35,10 +35,10 @@ public class DHTRoutingTable {
 
     private static final ObjectMapper OBJECT_MAPPER;
 
-    private final DHTNodeId nodeId;
+    private final HashKey nodeId;
     private final List<DHTBucket> buckets;
 
-    private final Map<DHTNodeId, List<SocketAddress>> peerMap;
+    private final Map<HashKey, List<SocketAddress>> peerMap;
 
     @JsonIgnore
     private Handler<Void> updatedHandler;
@@ -50,19 +50,19 @@ public class DHTRoutingTable {
 
         SimpleModule module = new SimpleModule();
 
-        module.addSerializer(DHTNodeId.class, new DHTNodeIdSerializer());
-        module.addDeserializer(DHTNodeId.class, new DHTNodeIdDeserializer());
+        module.addSerializer(HashKey.class, new HashKeySerializer());
+        module.addDeserializer(HashKey.class, new HashKeyDeserializer());
 
         module.addSerializer(SocketAddress.class, new SocketAddressSerializer());
         module.addDeserializer(SocketAddress.class, new SocketAddressDeserializer());
 
-        module.addKeyDeserializer(DHTNodeId.class, new DHTNodeIdKeyDeserializer());
+        module.addKeyDeserializer(HashKey.class, new HashKeyKeyDeserializer());
 
         OBJECT_MAPPER.registerModule(module);
     }
 
     public DHTRoutingTable() {
-        nodeId = DHTNodeId.random();
+        nodeId = HashKey.random();
         buckets = new ArrayList<>();
         peerMap = new HashMap<>();
 
@@ -73,9 +73,9 @@ public class DHTRoutingTable {
 
     @JsonCreator(mode = Mode.PROPERTIES)
     public DHTRoutingTable(
-            @JsonProperty("nodeId") DHTNodeId nodeId,
+            @JsonProperty("nodeId") HashKey nodeId,
             @JsonProperty("buckets") Collection<DHTBucket> buckets,
-            @JsonProperty("peerMap") Map<DHTNodeId, List<SocketAddress>> peerMap) {
+            @JsonProperty("peerMap") Map<HashKey, List<SocketAddress>> peerMap) {
         this.nodeId = nodeId;
         this.buckets = new ArrayList<>(buckets);
         this.peerMap = peerMap;
@@ -93,7 +93,7 @@ public class DHTRoutingTable {
         updatedHandler = handler;
     }
 
-    public Optional<DHTNode> refreshNode(DHTNodeId nodeId, SocketAddress address) {
+    public Optional<DHTNode> refreshNode(HashKey nodeId, SocketAddress address) {
         Optional<DHTNode> node = addNode(nodeId, address);
 
         node.ifPresent(DHTNode::refresh);
@@ -101,7 +101,7 @@ public class DHTRoutingTable {
         return node;
     }
 
-    public Optional<DHTNode> addNode(DHTNodeId nodeId, SocketAddress address) {
+    public Optional<DHTNode> addNode(HashKey nodeId, SocketAddress address) {
         DHTBucket bucket = getBucketForId(nodeId);
 
         Optional<DHTNode> node = bucket.findNodeById(nodeId).or(() -> addNodeToBucket(bucket, nodeId, address));
@@ -115,7 +115,7 @@ public class DHTRoutingTable {
         return node;
     }
 
-    private Optional<DHTNode> addNodeToBucket(DHTBucket bucket, DHTNodeId nodeId, SocketAddress address) {
+    private Optional<DHTNode> addNodeToBucket(DHTBucket bucket, HashKey nodeId, SocketAddress address) {
         DHTBucket target = bucket;
 
         if (target.isFull()) {
@@ -149,7 +149,7 @@ public class DHTRoutingTable {
         return Optional.empty();
     }
 
-    public DHTBucket getBucketForId(DHTNodeId nodeId) {
+    public DHTBucket getBucketForId(HashKey nodeId) {
         for (var bucket : buckets) {
             if (bucket.canContain(nodeId)) {
                 return bucket;
@@ -160,11 +160,11 @@ public class DHTRoutingTable {
         return null;
     }
 
-    public Optional<DHTNode> findNodeById(DHTNodeId id) {
+    public Optional<DHTNode> findNodeById(HashKey id) {
         return getBucketForId(id).findNodeById(id);
     }
 
-    public List<DHTNode> findClosestNodesForId(DHTNodeId nodeId) {
+    public List<DHTNode> findClosestNodesForId(HashKey nodeId) {
         int bucketIndex = -1;
 
         for (int i = 0; i < buckets.size(); i++) {
@@ -177,7 +177,9 @@ public class DHTRoutingTable {
         DHTBucket bucket = buckets.get(bucketIndex);
 
         List<DHTNode> nodes = new ArrayList<>();
+
         nodes.addAll(bucket.getNodes());
+        nodes.removeIf(DHTNode::isBad);
 
         int prevIndex = bucketIndex - 1;
         int nextIndex = bucketIndex + 1;
@@ -190,13 +192,14 @@ public class DHTRoutingTable {
                 nodes.addAll(buckets.get(nextIndex).getNodes());
             }
 
+            nodes.removeIf(DHTNode::isBad);
+
             prevIndex--;
             nextIndex++;
         }
 
         return nodes.stream()
-                .sorted((a, b) ->
-                        a.getNodeId().distance(nodeId).compareTo(b.getNodeId().distance(nodeId)))
+                .sorted(DHTNode.distanceComparator(nodeId))
                 .limit(8)
                 .toList();
     }
@@ -212,7 +215,7 @@ public class DHTRoutingTable {
     }
 
     public void addPeerForTorrent(byte[] infoHash, SocketAddress address) {
-        DHTNodeId key = new DHTNodeId(infoHash);
+        HashKey key = new HashKey(infoHash);
 
         List<SocketAddress> peers = peerMap.computeIfAbsent(key, k -> new ArrayList<>());
 
@@ -220,7 +223,7 @@ public class DHTRoutingTable {
     }
 
     public List<byte[]> findPeersForTorrent(byte[] infoHash) {
-        DHTNodeId key = new DHTNodeId(infoHash);
+        HashKey key = new HashKey(infoHash);
 
         List<SocketAddress> peers = peerMap.get(key);
 

@@ -12,7 +12,10 @@ import java.net.UnknownHostException;
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.List;
 import lombok.Getter;
 
 @Getter
@@ -20,7 +23,7 @@ public class DHTNode {
     private static final long STATUS_THRESHOLD = 15 * 60 * 1000; // 15min in ms
     private static final long FAILURE_THRESHOLD = 3;
 
-    private final DHTNodeId nodeId;
+    private final HashKey nodeId;
 
     private final SocketAddress address;
 
@@ -30,7 +33,7 @@ public class DHTNode {
     @JsonIgnore
     private Handler<DHTNode> refreshedHandler;
 
-    public DHTNode(DHTNodeId nodeId, SocketAddress address) {
+    public DHTNode(HashKey nodeId, SocketAddress address) {
         this.nodeId = nodeId;
         this.address = address;
 
@@ -40,7 +43,7 @@ public class DHTNode {
 
     @JsonCreator(mode = Mode.PROPERTIES)
     public DHTNode(
-            @JsonProperty("nodeId") DHTNodeId nodeId,
+            @JsonProperty("nodeId") HashKey nodeId,
             @JsonProperty("address") SocketAddress address,
             @JsonProperty("numFailedQueries") int numFailedQueries,
             @JsonProperty("lastUpdatedAt") long lastUpdatedAt) {
@@ -125,7 +128,7 @@ public class DHTNode {
             return null;
         }
 
-        byte[] nodeId = new byte[DHTNodeId.NUM_BYTES];
+        byte[] nodeId = new byte[HashKey.NUM_BYTES];
         byte[] addressBytes = new byte[4];
 
         buffer.get(nodeId);
@@ -137,13 +140,40 @@ public class DHTNode {
             InetAddress addr = InetAddress.getByAddress(addressBytes);
             SocketAddress socketAddress = SocketAddress.inetSocketAddress(new InetSocketAddress(addr, port));
 
-            return new DHTNode(new DHTNodeId(nodeId), socketAddress);
+            return new DHTNode(new HashKey(nodeId), socketAddress);
         } catch (UnknownHostException e) {
             throw new RuntimeException(e);
         }
     }
 
-    public static Comparator<DHTNode> distanceComparator(DHTNodeId key) {
+    public static List<DHTNode> allFromCompact(byte[] bytes) {
+        if (bytes == null) {
+            return List.of();
+        }
+
+        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN);
+
+        var list = new ArrayList<DHTNode>();
+
+        DHTNode n;
+        while ((n = fromCompact(buffer)) != null) {
+            list.add(n);
+        }
+
+        return list;
+    }
+
+    public static byte[] allToCompact(Collection<DHTNode> nodes) {
+        ByteBuffer buffer = ByteBuffer.allocate(nodes.size() * 26).order(ByteOrder.BIG_ENDIAN);
+
+        for (var n : nodes) {
+            n.writeCompact(buffer);
+        }
+
+        return buffer.array();
+    }
+
+    public static Comparator<DHTNode> distanceComparator(HashKey key) {
         return (a, b) -> a.getNodeId().distance(key).compareTo(b.getNodeId().distance(key));
     }
 }

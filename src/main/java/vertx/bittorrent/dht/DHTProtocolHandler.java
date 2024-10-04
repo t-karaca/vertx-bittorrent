@@ -3,7 +3,6 @@ package vertx.bittorrent.dht;
 import be.adaxisoft.bencode.BDecoder;
 import be.adaxisoft.bencode.BEncodedValue;
 import io.vertx.core.Future;
-import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.datagram.DatagramSocket;
@@ -19,15 +18,15 @@ import java.util.function.BiFunction;
 import lombok.extern.slf4j.Slf4j;
 import vertx.bittorrent.BEncodedDict;
 import vertx.bittorrent.dht.exception.DHTErrorException;
-import vertx.bittorrent.dht.exception.DHTTimeoutException;
-import vertx.bittorrent.dht.messages.DHTAnnouncePeerQuery;
+import vertx.bittorrent.dht.messages.AnnouncePeerQuery;
 import vertx.bittorrent.dht.messages.DHTErrorMessage;
-import vertx.bittorrent.dht.messages.DHTFindNodeQuery;
-import vertx.bittorrent.dht.messages.DHTGetPeersQuery;
 import vertx.bittorrent.dht.messages.DHTMessage;
-import vertx.bittorrent.dht.messages.DHTMessage.Type;
-import vertx.bittorrent.dht.messages.DHTPingQuery;
-import vertx.bittorrent.dht.messages.DHTQueryMessage;
+import vertx.bittorrent.dht.messages.DHTMessageType;
+import vertx.bittorrent.dht.messages.FindNodeQuery;
+import vertx.bittorrent.dht.messages.GetPeersQuery;
+import vertx.bittorrent.dht.messages.Payload;
+import vertx.bittorrent.dht.messages.PingQuery;
+import vertx.bittorrent.dht.messages.QueryPayload;
 
 @Slf4j
 public class DHTProtocolHandler {
@@ -40,8 +39,7 @@ public class DHTProtocolHandler {
 
     private final Random random = new SecureRandom();
 
-    private final Map<
-                    Class<? extends DHTQueryMessage>, BiFunction<SocketAddress, DHTQueryMessage, ? extends DHTMessage>>
+    private final Map<Class<? extends QueryPayload>, BiFunction<SocketAddress, QueryPayload, ? extends Payload>>
             queryHandlers = new HashMap<>();
 
     public DHTProtocolHandler(Vertx vertx) {
@@ -66,7 +64,7 @@ public class DHTProtocolHandler {
         return this.socket.close();
     }
 
-    public <R extends DHTMessage, T extends DHTQueryMessage<R>> void onQuery(
+    public <R extends Payload, T extends QueryPayload<R>> void onQuery(
             Class<T> type, BiFunction<SocketAddress, T, R> handler) {
         queryHandlers.put(type, (BiFunction) handler);
     }
@@ -79,39 +77,42 @@ public class DHTProtocolHandler {
             String transactionId = dict.requireString(DHTMessage.KEY_TRANSACTION_ID);
             String key = dict.requireString(DHTMessage.KEY_MESSAGE_TYPE);
 
-            Type type = Type.fromKey(key);
+            DHTMessageType type = DHTMessageType.fromValue(key);
 
-            BEncodedValue payload = dict.requireBEncodedValue(type.getPayloadKey());
+            BEncodedValue value = dict.requireBEncodedValue(type.payloadKey);
 
             switch (type) {
                 case QUERY: {
-                    String queryType = dict.requireString(DHTQueryMessage.KEY_QUERY_TYPE);
+                    String queryType = dict.requireString(DHTMessage.KEY_QUERY_TYPE);
 
-                    DHTQueryMessage<?> message =
+                    QueryPayload<?> payload =
                             switch (queryType) {
-                                case "ping" -> DHTPingQuery.fromPayload(transactionId, payload);
-                                case "find_node" -> DHTFindNodeQuery.fromPayload(transactionId, payload);
-                                case "get_peers" -> DHTGetPeersQuery.fromPayload(transactionId, payload);
-                                case "announce_peer" -> DHTAnnouncePeerQuery.fromPayload(transactionId, payload);
+                                case "ping" -> PingQuery.from(value);
+                                case "find_node" -> FindNodeQuery.from(value);
+                                case "get_peers" -> GetPeersQuery.from(value);
+                                case "announce_peer" -> AnnouncePeerQuery.from(value);
                                 default -> null;
                             };
 
-                    log.debug("Received query from {}:{} : {}", sender.hostAddress(), sender.port(), message);
+                    log.debug("Received query from {} : {}", sender, payload);
 
-                    if (message != null) {
-                        var handler = queryHandlers.get(message.getClass());
+                    if (payload != null) {
+                        var handler = queryHandlers.get(payload.getClass());
 
-                        DHTMessage response;
+                        DHTMessage response = new DHTMessage().setTransactionId(transactionId);
 
                         try {
-                            response = handler.apply(sender, message);
+                            response.setPayload(handler.apply(sender, payload));
+                            response.setType(DHTMessageType.RESPONSE);
                         } catch (DHTErrorException e) {
-                            response = e.getErrorMessage();
+                            log.error("Error while processing query", e);
+
+                            response.setPayload(e.getErrorMessage());
+                            response.setType(DHTMessageType.ERROR);
                         }
 
-                        response.setTransactionId(transactionId);
+                        log.debug("Sending response to {} : {}", sender, response.getPayload());
 
-                        log.debug("Sending response to {}:{} : {}", sender.hostAddress(), sender.port(), response);
                         Buffer packet = response.toBuffer();
                         socket.send(packet, sender.port(), sender.hostAddress());
                     }
@@ -127,15 +128,11 @@ public class DHTProtocolHandler {
                             transaction.getTarget().refresh();
                         }
 
-                        DHTMessage m = transaction.getQueryMessage().parseResponse(payload);
+                        Payload m = transaction.getQueryMessage().parseResponse(value);
 
-                        log.debug("Received response from {}:{} : {}", sender.hostAddress(), sender.port(), m);
+                        log.debug("Received response from {} : {}", sender, m);
 
-                        vertx.cancelTimer(transaction.getTimerId());
-
-                        transaction.getPromise().complete(m);
-
-                        activeTransactions.remove(transactionId);
+                        transaction.complete(m);
                     }
 
                     break;
@@ -144,15 +141,11 @@ public class DHTProtocolHandler {
                     DHTTransaction transaction = activeTransactions.get(transactionId);
 
                     if (transaction != null) {
-                        DHTErrorMessage m = DHTErrorMessage.fromPayload(transactionId, payload);
+                        DHTErrorMessage m = DHTErrorMessage.from(value);
 
-                        log.debug("Received error from {}:{} : {}", sender.hostAddress(), sender.port(), m);
+                        log.debug("Received error from {} : {}", sender, m);
 
-                        vertx.cancelTimer(transaction.getTimerId());
-
-                        transaction.getPromise().fail(new DHTErrorException(m));
-
-                        activeTransactions.remove(transactionId);
+                        transaction.fail(new DHTErrorException(m));
                     }
 
                     break;
@@ -164,77 +157,35 @@ public class DHTProtocolHandler {
         }
     }
 
-    public <T extends DHTMessage> Future<T> query(SocketAddress address, DHTQueryMessage<T> queryMessage) {
-        String transactionId = generateTransactionId();
-
-        queryMessage.setTransactionId(transactionId);
-
-        log.debug("Sending query to {}:{} : {}", address.hostAddress(), address.port(), queryMessage);
-
-        Buffer packet = queryMessage.toBuffer();
-
-        return socket.send(packet, address.port(), address.hostAddress())
-                .map(v -> {
-                    Promise<T> promise = Promise.promise();
-
-                    long timerId = vertx.setTimer(10_000, id -> {
-                        promise.fail(new DHTTimeoutException());
-
-                        activeTransactions.remove(transactionId);
-                    });
-
-                    DHTTransaction<T> transaction = DHTTransaction.<T>builder()
-                            .transactionId(transactionId)
-                            .queryMessage(queryMessage)
-                            .promise(promise)
-                            .timerId(timerId)
-                            .build();
-
-                    activeTransactions.put(transactionId, transaction);
-
-                    return transaction;
-                })
-                .flatMap(transaction -> transaction.getPromise().future());
+    public <T extends Payload> Future<T> query(SocketAddress address, QueryPayload<T> queryMessage) {
+        return startTransaction(address, queryMessage).future();
     }
 
-    public <T extends DHTMessage> Future<T> query(DHTNode node, DHTQueryMessage<T> queryMessage) {
+    public <T extends Payload> Future<T> query(DHTNode node, QueryPayload<T> queryMessage) {
+        return startTransaction(node.getAddress(), queryMessage).setTarget(node).future();
+    }
+
+    private <T extends Payload> DHTTransaction<T> startTransaction(
+            SocketAddress address, QueryPayload<T> queryMessage) {
         String transactionId = generateTransactionId();
 
-        queryMessage.setTransactionId(transactionId);
+        var transaction = new DHTTransaction<>(vertx, queryMessage) //
+                .onComplete(v -> activeTransactions.remove(transactionId));
 
-        log.debug(
-                "Sending query to {}:{} : {}",
-                node.getAddress().hostAddress(),
-                node.getAddress().port(),
-                queryMessage);
+        activeTransactions.put(transactionId, transaction);
 
-        Buffer packet = queryMessage.toBuffer();
+        DHTMessage message = new DHTMessage()
+                .setTransactionId(transactionId)
+                .setType(DHTMessageType.QUERY)
+                .setPayload(queryMessage);
 
-        return socket.send(packet, node.getAddress().port(), node.getAddress().hostAddress())
-                .map(v -> {
-                    Promise<T> promise = Promise.promise();
+        log.debug("Sending query to {} : {}", address, queryMessage);
 
-                    long timerId = vertx.setTimer(10_000, id -> {
-                        promise.fail(new DHTTimeoutException());
+        Buffer packet = message.toBuffer();
 
-                        node.addFailedQuery();
+        socket.send(packet, address.port(), address.hostAddress()).onFailure(transaction::fail);
 
-                        activeTransactions.remove(transactionId);
-                    });
-
-                    DHTTransaction<T> transaction = DHTTransaction.<T>builder()
-                            .transactionId(transactionId)
-                            .queryMessage(queryMessage)
-                            .target(node)
-                            .promise(promise)
-                            .timerId(timerId)
-                            .build();
-
-                    activeTransactions.put(transactionId, transaction);
-
-                    return transaction;
-                })
-                .flatMap(transaction -> transaction.getPromise().future());
+        return transaction;
     }
 
     private String generateTransactionId() {

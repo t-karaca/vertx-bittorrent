@@ -10,6 +10,10 @@ public class DHTLookupNode {
 
     @Getter
     @Setter
+    private byte[] token;
+
+    @Getter
+    @Setter
     private boolean queryFailed;
 
     @Getter
@@ -24,11 +28,11 @@ public class DHTLookupNode {
         this.node = node;
     }
 
-    public DHTNodeId getNodeId() {
+    public HashKey getNodeId() {
         return node.getNodeId();
     }
 
-    public static Comparator<DHTLookupNode> distanceComparator(DHTNodeId key) {
+    public static Comparator<DHTLookupNode> distanceComparator(HashKey key) {
         return (a, b) -> a.getNode()
                 .getNodeId()
                 .distance(key)

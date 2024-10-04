@@ -11,15 +11,17 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Getter
 public class DHTBucket {
     private static final long STATUS_THRESHOLD = 15 * 60 * 1000; // 15min in ms
 
     private static final int MAX_NODES = 8;
 
-    private DHTNodeId min;
-    private DHTNodeId max;
+    private HashKey min;
+    private HashKey max;
     private int splitLevel;
     private long lastUpdatedAt;
 
@@ -28,7 +30,7 @@ public class DHTBucket {
     @JsonIgnore
     private Handler<DHTBucket> refreshedHandler;
 
-    public DHTBucket(DHTNodeId min, DHTNodeId max, int splitLevel) {
+    public DHTBucket(HashKey min, HashKey max, int splitLevel) {
         this.min = min;
         this.max = max;
         this.splitLevel = splitLevel;
@@ -39,8 +41,8 @@ public class DHTBucket {
 
     @JsonCreator(mode = Mode.PROPERTIES)
     public DHTBucket(
-            @JsonProperty("min") DHTNodeId min,
-            @JsonProperty("max") DHTNodeId max,
+            @JsonProperty("min") HashKey min,
+            @JsonProperty("max") HashKey max,
             @JsonProperty("splitLevel") int splitLevel,
             @JsonProperty("lastUpdatedAt") long lastUpdatedAt,
             @JsonProperty("nodes") Collection<DHTNode> nodes) {
@@ -86,31 +88,15 @@ public class DHTBucket {
     }
 
     public void purgeBadNodes() {
-        // int index = -1;
-        // int failedQueries = -1;
-        //
-        // for (int i = 0; i < nodes.size(); i++) {
-        //     var node = nodes.get(i);
-        //
-        //     if (node.isBad()) {
-        //         if (index == -1 || failedQueries < node.getNumFailedQueries()) {
-        //             index = i;
-        //             failedQueries = node.getNumFailedQueries();
-        //         }
-        //     }
-        // }
-
         var badNodes = nodes.stream().filter(DHTNode::isBad).toList();
 
-        badNodes.forEach(n -> n.onRefresh(null));
+        if (!badNodes.isEmpty()) {
+            badNodes.forEach(n -> n.onRefresh(null));
 
-        nodes.removeAll(badNodes);
+            log.debug("Purging bad nodes: {}", badNodes);
 
-        // if (index != -1) {
-        //     nodes.get(index).onRefresh(null);
-        //
-        //     nodes.remove(index);
-        // }
+            nodes.removeAll(badNodes);
+        }
     }
 
     public int nodesCount() {
@@ -128,15 +114,21 @@ public class DHTBucket {
     }
 
     @JsonIgnore
-    public DHTNode getRandomNode() {
-        var random = new SecureRandom();
+    public Optional<DHTNode> getRandomNode() {
+        var list = nodes.stream().filter(n -> !n.isBad()).toList();
 
-        int index = random.nextInt(nodes.size());
+        if (!list.isEmpty()) {
+            var random = new SecureRandom();
 
-        return nodes.get(index);
+            int index = random.nextInt(nodes.size());
+
+            return Optional.of(nodes.get(index));
+        }
+
+        return Optional.empty();
     }
 
-    public Optional<DHTNode> findNodeById(DHTNodeId nodeId) {
+    public Optional<DHTNode> findNodeById(HashKey nodeId) {
         for (var node : nodes) {
             if (node.getNodeId().equals(nodeId)) {
                 return Optional.of(node);
@@ -147,7 +139,7 @@ public class DHTBucket {
     }
 
     public DHTBucket split() {
-        DHTNodeId mid = min.withBitAt(splitLevel);
+        HashKey mid = min.withBitAt(splitLevel);
 
         splitLevel++;
 
@@ -175,11 +167,11 @@ public class DHTBucket {
         return canContain(node.getNodeId());
     }
 
-    public boolean canContain(DHTNodeId nodeId) {
+    public boolean canContain(HashKey nodeId) {
         return nodeId.greaterOrEquals(min) && nodeId.lessThan(max);
     }
 
     public static final DHTBucket initial() {
-        return new DHTBucket(DHTNodeId.MIN, DHTNodeId.MAX, 0);
+        return new DHTBucket(HashKey.MIN, HashKey.MAX, 0);
     }
 }

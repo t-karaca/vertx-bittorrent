@@ -6,12 +6,16 @@ import java.nio.charset.StandardCharsets;
 
 public class UriBuilder {
 
-    private final StringBuilder builder = new StringBuilder();
+    private String protocol;
+    private String host;
+    private int port;
+    private final StringBuilder pathBuilder = new StringBuilder();
+    private final StringBuilder paramsBuilder = new StringBuilder();
 
     private boolean hasQueryParams = false;
 
     public URI build() {
-        return URI.create(builder.toString());
+        return URI.create(paramsBuilder.toString());
     }
 
     public UriBuilder queryParam(String param, byte[] value) {
@@ -19,9 +23,9 @@ public class UriBuilder {
 
         for (byte b : value) {
             if (b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9') {
-                builder.append((char) b);
+                paramsBuilder.append((char) b);
             } else {
-                builder.append("%").append(String.format("%02x", b));
+                paramsBuilder.append("%").append(String.format("%02x", b));
             }
         }
 
@@ -31,7 +35,7 @@ public class UriBuilder {
     public UriBuilder queryParam(String param, String value) {
         appendQueryParamKey(param);
 
-        builder.append(URLEncoder.encode(value, StandardCharsets.UTF_8));
+        paramsBuilder.append(URLEncoder.encode(value, StandardCharsets.UTF_8));
 
         return this;
     }
@@ -39,7 +43,7 @@ public class UriBuilder {
     public UriBuilder rawQueryParam(String param, String value) {
         appendQueryParamKey(param);
 
-        builder.append(value);
+        paramsBuilder.append(value);
 
         return this;
     }
@@ -47,20 +51,20 @@ public class UriBuilder {
     public UriBuilder queryParam(String param, long value) {
         appendQueryParamKey(param);
 
-        builder.append(value);
+        paramsBuilder.append(value);
 
         return this;
     }
 
     private void appendQueryParamKey(String param) {
         if (!hasQueryParams) {
-            builder.append('?');
+            paramsBuilder.append('?');
         } else {
-            builder.append('&');
+            paramsBuilder.append('&');
         }
 
-        builder.append(param);
-        builder.append('=');
+        paramsBuilder.append(param);
+        paramsBuilder.append('=');
 
         hasQueryParams = true;
     }
@@ -68,7 +72,7 @@ public class UriBuilder {
     public static UriBuilder fromUriString(String uriString) {
         UriBuilder builder = new UriBuilder();
 
-        builder.builder.append(uriString);
+        builder.paramsBuilder.append(uriString);
         builder.hasQueryParams = uriString.contains("?");
 
         return builder;

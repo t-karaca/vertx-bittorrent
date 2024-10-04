@@ -3,6 +3,7 @@ package vertx.bittorrent;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.net.NetClient;
+import io.vertx.core.net.NetClientOptions;
 import io.vertx.core.net.NetServer;
 import java.security.SecureRandom;
 import java.util.ArrayList;
@@ -77,7 +78,7 @@ public class TorrentController {
         //     }
         // });
 
-        netClient = vertx.createNetClient();
+        netClient = vertx.createNetClient(new NetClientOptions().setConnectTimeout(5_000));
         netServer = vertx.createNetServer();
 
         netServer.connectHandler(socket -> {
@@ -97,21 +98,24 @@ public class TorrentController {
                     torrentState.setServerPort(server.actualPort());
 
                     vertx.setPeriodic(0, 60_000, id -> {
-                        dhtClient.torrent(torrentState.getTorrent().getInfoHash(), peers -> {
-                            for (Peer peer : peers) {
-                                if (!isConnectedToPeer(peer) && !connectionQueue.contains(peer)) {
-                                    connectionQueue.add(peer);
+                        if (dhtClient != null) {
+
+                            dhtClient.torrent(torrentState.getTorrent().getInfoHash(), peers -> {
+                                for (Peer peer : peers) {
+                                    if (!isConnectedToPeer(peer) && !connectionQueue.contains(peer)) {
+                                        connectionQueue.add(peer);
+                                    }
                                 }
-                            }
 
-                            if (connectTimerId == -1) {
-                                connectToPeers();
-
-                                connectTimerId = vertx.setPeriodic(10_000, id2 -> {
+                                if (connectTimerId == -1) {
                                     connectToPeers();
-                                });
-                            }
-                        });
+
+                                    connectTimerId = vertx.setPeriodic(10_000, id2 -> {
+                                        connectToPeers();
+                                    });
+                                }
+                            });
+                        }
                     });
 
                     // tracker.announce();

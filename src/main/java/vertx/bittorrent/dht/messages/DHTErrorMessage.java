@@ -6,25 +6,20 @@ import java.io.UncheckedIOException;
 import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.ToString;
-import lombok.experimental.SuperBuilder;
 
 @Getter
-@SuperBuilder
+@Builder
 @ToString
-public class DHTErrorMessage extends DHTMessage {
+public class DHTErrorMessage implements Payload {
 
     private final int errorCode;
     private final String errorMessage;
 
     @Override
-    public Type getMessageType() {
-        return Type.ERROR;
-    }
-
-    @Override
-    public BEncodedValue getPayload() {
+    public BEncodedValue value() {
         try {
             List<BEncodedValue> list = new ArrayList<>(2);
 
@@ -37,17 +32,13 @@ public class DHTErrorMessage extends DHTMessage {
         }
     }
 
-    public static DHTErrorMessage fromPayload(String transactionId, BEncodedValue payload) {
+    public static DHTErrorMessage from(BEncodedValue value) {
         try {
-            List<BEncodedValue> list = payload.getList();
+            List<BEncodedValue> list = value.getList();
             int errorCode = list.get(0).getInt();
             String errorMessage = list.get(1).getString();
 
-            return builder()
-                    .transactionId(transactionId)
-                    .errorCode(errorCode)
-                    .errorMessage(errorMessage)
-                    .build();
+            return builder().errorCode(errorCode).errorMessage(errorMessage).build();
         } catch (InvalidBEncodingException e) {
             throw new UncheckedIOException(e);
         }

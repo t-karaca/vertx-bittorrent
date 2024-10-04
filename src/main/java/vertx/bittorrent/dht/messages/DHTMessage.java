@@ -1,81 +1,66 @@
 package vertx.bittorrent.dht.messages;
 
+import static java.util.Objects.requireNonNull;
+
 import be.adaxisoft.bencode.BEncodedValue;
 import io.vertx.core.buffer.Buffer;
 import java.nio.ByteBuffer;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import lombok.Setter;
-import lombok.experimental.SuperBuilder;
 import vertx.bittorrent.BEncodedDict;
 
-@Getter
-@RequiredArgsConstructor
-@SuperBuilder
-public abstract class DHTMessage {
+public class DHTMessage {
 
     public static final String KEY_TRANSACTION_ID = "t";
     public static final String KEY_MESSAGE_TYPE = "y";
-    public static final String KEY_NODE_ID = "id";
+    public static final String KEY_QUERY_TYPE = "q";
 
-    public enum Type {
-        QUERY("q", "a"),
-        RESPONSE("r", "r"),
-        ERROR("e", "e");
-
-        private String key;
-        private String payloadKey;
-
-        Type(String key, String payloadKey) {
-            this.key = key;
-            this.payloadKey = payloadKey;
-        }
-
-        public String getKey() {
-            return this.key;
-        }
-
-        public String getPayloadKey() {
-            return this.payloadKey;
-        }
-
-        public static Type fromKey(String key) {
-            for (var type : Type.values()) {
-                if (type.getKey().equals(key)) {
-                    return type;
-                }
-            }
-
-            throw new IllegalArgumentException("Could not resolve type for key '" + key + "'");
-        }
-    }
-
+    @Getter
     @Setter
     private String transactionId;
+
+    @Getter
+    @Setter
+    private DHTMessageType type;
+
+    @Getter
+    @Setter
+    private Payload payload;
+
+    public boolean isQuery() {
+        return type == DHTMessageType.QUERY;
+    }
+
+    public boolean isResponse() {
+        return type == DHTMessageType.RESPONSE;
+    }
+
+    public boolean isError() {
+        return type == DHTMessageType.ERROR;
+    }
 
     public Buffer toBuffer() {
         BEncodedDict dict = new BEncodedDict();
 
-        Type type = getMessageType();
-
         dict.put(KEY_TRANSACTION_ID, transactionId);
-        dict.put(KEY_MESSAGE_TYPE, type.getKey());
+        dict.put(KEY_MESSAGE_TYPE, type.value);
 
-        BEncodedValue payload = getPayload();
+        if (payload instanceof QueryPayload queryPayload) {
+            String queryType = queryPayload.queryType();
+            requireNonNull(queryType);
+
+            dict.put(KEY_QUERY_TYPE, queryType);
+        }
 
         if (payload != null) {
-            dict.put(type.getPayloadKey(), getPayload());
+            BEncodedValue value = payload.value();
+
+            if (value != null) {
+                dict.put(type.payloadKey, value);
+            }
         }
 
         ByteBuffer buffer = dict.encode();
         return Buffer.buffer(buffer.array());
-    }
-
-    public Type getMessageType() {
-        return Type.QUERY;
-    }
-
-    public BEncodedValue getPayload() {
-        return null;
     }
 }

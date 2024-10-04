@@ -1,18 +1,20 @@
 package vertx.bittorrent.dht;
 
 import io.vertx.core.Future;
+import io.vertx.core.Handler;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Random;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import vertx.bittorrent.dht.messages.DHTFindNodeQuery;
+import vertx.bittorrent.Peer;
+import vertx.bittorrent.TrackerResponse;
+import vertx.bittorrent.dht.messages.GetPeersQuery;
 
 @Slf4j
 public class DHTLookup {
@@ -24,7 +26,7 @@ public class DHTLookup {
     private final DHTRoutingTable routingTable;
 
     @Getter
-    private final DHTNodeId key;
+    private final HashKey key;
 
     private final Random random = new SecureRandom();
 
@@ -34,13 +36,20 @@ public class DHTLookup {
 
     private List<DHTLookupNode> closestNodes;
 
-    private Promise<List<DHTNode>> promise;
+    private Promise<List<DHTLookupNode>> promise;
 
-    public DHTLookup(Vertx vertx, DHTProtocolHandler protocolHandler, DHTRoutingTable routingTable, DHTNodeId key) {
+    private Handler<List<Peer>> peersHandler;
+
+    public DHTLookup(Vertx vertx, DHTProtocolHandler protocolHandler, DHTRoutingTable routingTable, HashKey key) {
         this.vertx = vertx;
         this.protocolHandler = protocolHandler;
         this.routingTable = routingTable;
         this.key = key;
+    }
+
+    public DHTLookup onPeers(Handler<List<Peer>> handler) {
+        peersHandler = handler;
+        return this;
     }
 
     public Future<Void> cancel() {
@@ -53,7 +62,7 @@ public class DHTLookup {
         return random.nextBoolean() ? a : b;
     }
 
-    public Future<List<DHTNode>> start() {
+    public Future<List<DHTLookupNode>> start() {
         if (promise == null) {
             promise = Promise.promise();
 
@@ -77,7 +86,6 @@ public class DHTLookup {
                 var result = closestNodes.stream()
                         .filter(n -> !n.isQueryFailed())
                         .limit(MAX_NODES)
-                        .map(DHTLookupNode::getNode)
                         .toList();
 
                 log.info("[{}] Lookup finished, found nodes: {}", key, result);
@@ -99,12 +107,12 @@ public class DHTLookup {
         protocolHandler
                 .query(
                         node.getNode(),
-                        DHTFindNodeQuery.builder()
+                        GetPeersQuery.builder()
                                 .nodeId(routingTable.getNodeId())
-                                .target(key)
+                                .infoHash(key.getBytes())
                                 .build())
                 .onFailure(e -> {
-                    log.error("[{}] Failed get peers query", key, e);
+                    log.error("[{}] Failed get peers query: {}", key, e.getMessage());
 
                     node.setQueryFailed(true);
                     node.setQueried(true);
@@ -117,51 +125,38 @@ public class DHTLookup {
                     activeLookups--;
                     node.setQueried(true);
 
-                    // res.getValues().stream()
-                    //         .map(TrackerResponse::parsePeers4)
-                    //         .flatMap(Collection::stream)
-                    //         .forEach(p -> log.info("[{}] Found peer: {}", key, p));
+                    node.setToken(res.getToken());
 
-                    ByteBuffer buffer = ByteBuffer.wrap(res.getNodes()).order(ByteOrder.BIG_ENDIAN);
+                    var peers = res.getValues().stream()
+                            .map(TrackerResponse::parsePeers4)
+                            .flatMap(Collection::stream)
+                            .toList();
 
-                    log.debug("[{}] Received {} nodes from {}", key, res.getNodes().length / 26, node.getNode());
-
-                    DHTNode n;
-                    while ((n = DHTNode.fromCompact(buffer)) != null) {
-                        log.debug("[{}] {}", key, n);
-
-                        addNode(n);
+                    if (!peers.isEmpty() && peersHandler != null) {
+                        log.debug("[{}] Found {} peers", peers.size());
+                        peersHandler.handle(peers);
                     }
+
+                    DHTNode.allFromCompact(res.getNodes()).stream()
+                            .peek(n -> log.debug("[{}] {}", key, n))
+                            .forEach(this::addNode);
 
                     timerId = vertx.setTimer(1_000, id -> lookup());
                 });
     }
 
-    private boolean addNode(DHTNode node) {
+    private void addNode(DHTNode node) {
         if (closestNodes.stream().anyMatch(n -> n.getNodeId().equals(node.getNodeId()))) {
-            return false;
+            return;
         }
 
-        if (closestNodes.size() < MAX_NODES) {
-            closestNodes.add(new DHTLookupNode(node));
-            closestNodes.sort(DHTLookupNode.distanceComparator(key));
-            return true;
-        }
-
-        int lastIndex = Math.min(MAX_NODES - 1, closestNodes.size() - 1);
-        DHTLookupNode farthestNode = closestNodes.get(lastIndex);
-        if (node.getNodeId().distance(key).lessThan(farthestNode.getNodeId().distance(key))) {
-            closestNodes.add(new DHTLookupNode(node));
-            closestNodes.sort(DHTLookupNode.distanceComparator(key));
-            return true;
-        }
-
-        return false;
+        closestNodes.add(new DHTLookupNode(node));
+        closestNodes.sort(DHTLookupNode.distanceComparator(key));
     }
 
     public static DHTLookup forTorrent(
             Vertx vertx, DHTProtocolHandler protocolHandler, DHTRoutingTable routingTable, byte[] infoHash) {
-        var key = new DHTNodeId(infoHash);
+        var key = new HashKey(infoHash);
 
         var lookup = new DHTLookup(vertx, protocolHandler, routingTable, key);
 

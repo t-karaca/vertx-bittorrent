@@ -100,7 +100,7 @@ public class TorrentController {
                     vertx.setPeriodic(0, 60_000, id -> {
                         if (dhtClient != null) {
 
-                            dhtClient.torrent(torrentState.getTorrent().getInfoHash(), peers -> {
+                            dhtClient.lookupTorrent(torrentState.getTorrent().getInfoHash(), peers -> {
                                 for (Peer peer : peers) {
                                     if (!isConnectedToPeer(peer) && !connectionQueue.contains(peer)) {
                                         connectionQueue.add(peer);

@@ -4,15 +4,14 @@ import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
-import java.util.Random;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import vertx.bittorrent.Peer;
+import vertx.bittorrent.RandomUtils;
 import vertx.bittorrent.TrackerResponse;
 import vertx.bittorrent.dht.messages.GetPeersQuery;
 
@@ -27,8 +26,6 @@ public class DHTLookup {
 
     @Getter
     private final HashKey key;
-
-    private final Random random = new SecureRandom();
 
     private long timerId;
 
@@ -58,10 +55,6 @@ public class DHTLookup {
         return Future.succeededFuture();
     }
 
-    private <T> T reservoirSample(T a, T b) {
-        return random.nextBoolean() ? a : b;
-    }
-
     public Future<List<DHTLookupNode>> start() {
         if (promise == null) {
             promise = Promise.promise();
@@ -79,7 +72,7 @@ public class DHTLookup {
                 .filter(n -> !n.isQueryFailed())
                 .limit(MAX_NODES)
                 .filter(n -> !n.isQueried() && !n.isQuerying())
-                .reduce(this::reservoirSample);
+                .reduce(RandomUtils::reservoirSample);
 
         if (optional.isEmpty()) {
             if (activeLookups == 0) {
@@ -133,7 +126,7 @@ public class DHTLookup {
                             .toList();
 
                     if (!peers.isEmpty() && peersHandler != null) {
-                        log.debug("[{}] Found {} peers", peers.size());
+                        log.debug("[{}] Found {} peers", key, peers.size());
                         peersHandler.handle(peers);
                     }
 

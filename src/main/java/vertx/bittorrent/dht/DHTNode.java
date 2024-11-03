@@ -17,6 +17,8 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import lombok.Getter;
+import lombok.Setter;
+import vertx.bittorrent.ToStringBuilder;
 
 @Getter
 public class DHTNode {
@@ -29,6 +31,10 @@ public class DHTNode {
 
     private int numFailedQueries;
     private long lastUpdatedAt;
+
+    @Setter
+    @JsonIgnore
+    private boolean querying;
 
     @JsonIgnore
     private Handler<DHTNode> refreshedHandler;
@@ -60,7 +66,10 @@ public class DHTNode {
 
     @Override
     public String toString() {
-        return "DHTNode(nodeId=" + nodeId.toString() + ", address=" + address.toString() + ")";
+        return ToStringBuilder.builder(getClass())
+                .field("nodeId", nodeId)
+                .field("address", address)
+                .build();
     }
 
     public void addFailedQuery() {

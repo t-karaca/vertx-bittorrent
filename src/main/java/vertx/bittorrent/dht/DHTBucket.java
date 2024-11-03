@@ -5,20 +5,20 @@ import com.fasterxml.jackson.annotation.JsonCreator.Mode;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.vertx.core.Handler;
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import vertx.bittorrent.RandomUtils;
 
 @Slf4j
 @Getter
 public class DHTBucket {
-    private static final long STATUS_THRESHOLD = 15 * 60 * 1000; // 15min in ms
+    public static final int MAX_NODES = 8;
 
-    private static final int MAX_NODES = 8;
+    private static final long STATUS_THRESHOLD = 15 * 60 * 1000; // 15min in ms
 
     private HashKey min;
     private HashKey max;
@@ -93,7 +93,7 @@ public class DHTBucket {
         if (!badNodes.isEmpty()) {
             badNodes.forEach(n -> n.onRefresh(null));
 
-            log.debug("Purging bad nodes: {}", badNodes);
+            log.debug("Purging {} bad nodes: {}", badNodes.size(), badNodes);
 
             nodes.removeAll(badNodes);
         }
@@ -110,7 +110,7 @@ public class DHTBucket {
 
     @JsonIgnore
     public boolean isFull() {
-        return nodes.size() == MAX_NODES;
+        return nodes.stream().filter(n -> !n.isBad()).count() == MAX_NODES;
     }
 
     @JsonIgnore
@@ -118,11 +118,7 @@ public class DHTBucket {
         var list = nodes.stream().filter(n -> !n.isBad()).toList();
 
         if (!list.isEmpty()) {
-            var random = new SecureRandom();
-
-            int index = random.nextInt(nodes.size());
-
-            return Optional.of(nodes.get(index));
+            return Optional.of(RandomUtils.randomFrom(nodes));
         }
 
         return Optional.empty();

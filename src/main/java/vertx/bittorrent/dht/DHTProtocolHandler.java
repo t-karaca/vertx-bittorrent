@@ -141,6 +141,10 @@ public class DHTProtocolHandler {
                     DHTTransaction transaction = activeTransactions.get(transactionId);
 
                     if (transaction != null) {
+                        if (transaction.getTarget() != null) {
+                            transaction.getTarget().addFailedQuery();
+                        }
+
                         DHTErrorMessage m = DHTErrorMessage.from(value);
 
                         log.debug("Received error from {} : {}", sender, m);

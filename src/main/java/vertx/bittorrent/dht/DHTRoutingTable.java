@@ -4,9 +4,15 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonCreator.Mode;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.MappingJsonFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.vertx.core.Handler;
 import io.vertx.core.net.SocketAddress;
 import java.io.IOException;
@@ -23,6 +29,7 @@ import java.util.Optional;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import vertx.bittorrent.Peer;
+import vertx.bittorrent.RandomUtils;
 import vertx.bittorrent.dht.json.HashKeyDeserializer;
 import vertx.bittorrent.dht.json.HashKeyKeyDeserializer;
 import vertx.bittorrent.dht.json.HashKeySerializer;
@@ -38,15 +45,14 @@ public class DHTRoutingTable {
     private final HashKey nodeId;
     private final List<DHTBucket> buckets;
 
-    private final Map<HashKey, List<SocketAddress>> peerMap;
+    private final Map<HashKey, List<DHTPeerEntry>> peerMap;
 
     @JsonIgnore
     private Handler<Void> updatedHandler;
 
     static {
-        OBJECT_MAPPER = new ObjectMapper();
-
-        OBJECT_MAPPER.configure(SerializationFeature.INDENT_OUTPUT, true);
+        JsonFactory jsonFactory = new MappingJsonFactory();
+        jsonFactory.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
 
         SimpleModule module = new SimpleModule();
 
@@ -58,7 +64,13 @@ public class DHTRoutingTable {
 
         module.addKeyDeserializer(HashKey.class, new HashKeyKeyDeserializer());
 
-        OBJECT_MAPPER.registerModule(module);
+        OBJECT_MAPPER = new ObjectMapper(jsonFactory)
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .disable(JsonParser.Feature.AUTO_CLOSE_SOURCE)
+                .enable(SerializationFeature.INDENT_OUTPUT)
+                .registerModule(module)
+                .registerModule(new JavaTimeModule());
     }
 
     public DHTRoutingTable() {
@@ -75,12 +87,16 @@ public class DHTRoutingTable {
     public DHTRoutingTable(
             @JsonProperty("nodeId") HashKey nodeId,
             @JsonProperty("buckets") Collection<DHTBucket> buckets,
-            @JsonProperty("peerMap") Map<HashKey, List<SocketAddress>> peerMap) {
+            @JsonProperty("peerMap") Map<HashKey, List<DHTPeerEntry>> peerMap) {
         this.nodeId = nodeId;
         this.buckets = new ArrayList<>(buckets);
         this.peerMap = peerMap;
 
         this.buckets.forEach(b -> b.onRefresh(this::onBucketRefreshed));
+    }
+
+    public boolean isEmpty() {
+        return buckets.isEmpty() || buckets.size() == 1 && buckets.get(0).isEmpty();
     }
 
     private void onBucketRefreshed(DHTBucket bucket) {
@@ -183,7 +199,7 @@ public class DHTRoutingTable {
 
         int prevIndex = bucketIndex - 1;
         int nextIndex = bucketIndex + 1;
-        while (nodes.size() < 8 && (prevIndex >= 0 || nextIndex < buckets.size())) {
+        while (nodes.size() < DHTBucket.MAX_NODES && (prevIndex >= 0 || nextIndex < buckets.size())) {
             if (prevIndex >= 0) {
                 nodes.addAll(buckets.get(prevIndex).getNodes());
             }
@@ -200,35 +216,41 @@ public class DHTRoutingTable {
 
         return nodes.stream()
                 .sorted(DHTNode.distanceComparator(nodeId))
-                .limit(8)
+                .limit(DHTBucket.MAX_NODES)
                 .toList();
     }
 
     public Optional<DHTBucket> findBucketToRefresh() {
-        for (var bucket : buckets) {
-            if (bucket.needsRefresh() && !bucket.isEmpty()) {
-                return Optional.of(bucket);
-            }
+        return buckets.stream()
+                .filter(bucket -> bucket.needsRefresh() && !bucket.isEmpty())
+                .reduce(RandomUtils::reservoirSample);
+    }
+
+    public void addPeerForTorrent(HashKey infoHash, SocketAddress address) {
+        List<DHTPeerEntry> peers = peerMap.computeIfAbsent(infoHash, k -> new ArrayList<>());
+
+        peers.removeIf(DHTPeerEntry::isStale);
+
+        peers.stream()
+                .filter(peer -> peer.getPeerAddress().equals(address))
+                .findAny()
+                .ifPresentOrElse(DHTPeerEntry::refresh, () -> peers.add(new DHTPeerEntry(address)));
+
+        if (updatedHandler != null) {
+            updatedHandler.handle(null);
         }
-
-        return Optional.empty();
     }
 
-    public void addPeerForTorrent(byte[] infoHash, SocketAddress address) {
-        HashKey key = new HashKey(infoHash);
-
-        List<SocketAddress> peers = peerMap.computeIfAbsent(key, k -> new ArrayList<>());
-
-        peers.add(address);
-    }
-
-    public List<byte[]> findPeersForTorrent(byte[] infoHash) {
-        HashKey key = new HashKey(infoHash);
-
-        List<SocketAddress> peers = peerMap.get(key);
+    public List<byte[]> findPeersForTorrent(HashKey infoHash) {
+        List<DHTPeerEntry> peers = peerMap.get(infoHash);
 
         if (peers != null) {
-            return peers.stream().map(Peer::toCompact).toList();
+            peers.removeIf(DHTPeerEntry::isStale);
+
+            return peers.stream()
+                    .map(DHTPeerEntry::getPeerAddress)
+                    .map(Peer::toCompact)
+                    .toList();
         }
 
         return Collections.emptyList();

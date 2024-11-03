@@ -93,7 +93,7 @@ public class TorrentState {
     }
 
     public Future<Void> checkPiecesOnDisk() {
-        int numThreads = 1; // Runtime.getRuntime().availableProcessors();
+        int numThreads = Runtime.getRuntime().availableProcessors();
 
         log.debug("Checking completed pieces with {} threads ...", numThreads);
 
@@ -139,19 +139,31 @@ public class TorrentState {
                         });
 
                         try {
-                            file.read(buffer, position.getOffset());
+                            int bytesRead = file.read(buffer, position.getOffset());
+
+                            if (bytesRead == -1) {
+                                break;
+                            }
+
+                            pieceOffset += bytesRead;
                         } catch (IOException e) {
                             throw new UncheckedIOException(e);
                         }
-
-                        pieceOffset += bytesToRead;
                     }
 
                     buffer.position(0);
 
-                    HashUtils.sha1(buffer, hashOutput);
+                    boolean isValid = false;
 
-                    if (HashUtils.isEqual(torrent.getHashForPiece(i), hashOutput)) {
+                    if (pieceOffset == pieceLength) {
+                        HashUtils.sha1(buffer, hashOutput);
+
+                        if (HashUtils.isEqual(torrent.getHashForPiece(i), hashOutput)) {
+                            isValid = true;
+                        }
+                    }
+
+                    if (isValid) {
                         log.trace("Piece with index {} is valid", i);
 
                         synchronized (bitfield) {

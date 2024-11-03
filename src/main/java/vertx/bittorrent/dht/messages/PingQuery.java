@@ -1,17 +1,24 @@
 package vertx.bittorrent.dht.messages;
 
 import be.adaxisoft.bencode.BEncodedValue;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.ToString;
 import vertx.bittorrent.BEncodedDict;
 import vertx.bittorrent.dht.HashKey;
 
 @Getter
-@Builder
 @ToString
 public class PingQuery implements QueryPayload<PingResponse> {
+
+    public static final String QUERY_TYPE = "ping";
+
+    private static final String FIELD_ID = "id";
+
     private final HashKey nodeId;
+
+    public PingQuery(HashKey nodeId) {
+        this.nodeId = nodeId;
+    }
 
     @Override
     public PingResponse parseResponse(BEncodedValue value) {
@@ -20,14 +27,14 @@ public class PingQuery implements QueryPayload<PingResponse> {
 
     @Override
     public String queryType() {
-        return "ping";
+        return QUERY_TYPE;
     }
 
     @Override
     public BEncodedValue value() {
         BEncodedDict dict = new BEncodedDict();
 
-        dict.put("id", nodeId.getBytes());
+        dict.put(FIELD_ID, nodeId.getBytes());
 
         return dict.toValue();
     }
@@ -35,8 +42,8 @@ public class PingQuery implements QueryPayload<PingResponse> {
     public static PingQuery from(BEncodedValue value) {
         BEncodedDict dict = BEncodedDict.from(value);
 
-        byte[] nodeId = dict.requireBytes("id");
+        byte[] nodeId = dict.requireBytes(FIELD_ID);
 
-        return builder().nodeId(new HashKey(nodeId)).build();
+        return new PingQuery(new HashKey(nodeId));
     }
 }

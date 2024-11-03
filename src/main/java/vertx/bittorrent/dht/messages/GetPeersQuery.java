@@ -10,6 +10,12 @@ import vertx.bittorrent.dht.HashKey;
 @Getter
 @Builder
 public class GetPeersQuery implements QueryPayload<GetPeersResponse> {
+
+    public static final String QUERY_TYPE = "get_peers";
+
+    private static final String FIELD_ID = "id";
+    private static final String FIELD_INFO_HASH = "info_hash";
+
     private final HashKey nodeId;
     private final byte[] infoHash;
 
@@ -25,15 +31,15 @@ public class GetPeersQuery implements QueryPayload<GetPeersResponse> {
     public BEncodedValue value() {
         BEncodedDict dict = new BEncodedDict();
 
-        dict.put("id", nodeId.getBytes());
-        dict.put("info_hash", infoHash);
+        dict.put(FIELD_ID, nodeId.getBytes());
+        dict.put(FIELD_INFO_HASH, infoHash);
 
         return dict.toValue();
     }
 
     @Override
     public String queryType() {
-        return "get_peers";
+        return QUERY_TYPE;
     }
 
     @Override
@@ -44,8 +50,8 @@ public class GetPeersQuery implements QueryPayload<GetPeersResponse> {
     public static GetPeersQuery from(BEncodedValue value) {
         BEncodedDict dict = BEncodedDict.from(value);
 
-        byte[] nodeId = dict.requireBytes("id");
-        byte[] infoHash = dict.requireBytes("info_hash");
+        byte[] nodeId = dict.requireBytes(FIELD_ID);
+        byte[] infoHash = dict.requireBytes(FIELD_INFO_HASH);
 
         return builder().nodeId(new HashKey(nodeId)).infoHash(infoHash).build();
     }

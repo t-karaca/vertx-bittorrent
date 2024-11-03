@@ -11,13 +11,16 @@ import vertx.bittorrent.dht.HashKey;
 @Builder
 @ToString
 public class AnnouncePeerResponse implements Payload {
+
+    private static final String FIELD_ID = "id";
+
     private final HashKey nodeId;
 
     @Override
     public BEncodedValue value() {
         BEncodedDict dict = new BEncodedDict();
 
-        dict.put("id", nodeId.getBytes());
+        dict.put(FIELD_ID, nodeId.getBytes());
 
         return dict.toValue();
     }
@@ -25,7 +28,7 @@ public class AnnouncePeerResponse implements Payload {
     public static AnnouncePeerResponse from(BEncodedValue value) {
         BEncodedDict dict = BEncodedDict.from(value);
 
-        byte[] nodeId = dict.requireBytes("id");
+        byte[] nodeId = dict.requireBytes(FIELD_ID);
 
         return builder().nodeId(new HashKey(nodeId)).build();
     }

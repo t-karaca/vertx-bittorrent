@@ -42,7 +42,7 @@ public class DHTMessageWriteTest {
         var message = new DHTMessage()
                 .setTransactionId("aa")
                 .setType(DHTMessageType.QUERY)
-                .setPayload(PingQuery.builder().nodeId(HashKey.fromString(id)).build());
+                .setPayload(new PingQuery(HashKey.fromString(id)));
 
         assertThat(message.toBuffer().getBytes()).asString().isEqualTo(payload);
     }
@@ -55,8 +55,7 @@ public class DHTMessageWriteTest {
         var message = new DHTMessage()
                 .setTransactionId("aa")
                 .setType(DHTMessageType.RESPONSE)
-                .setPayload(
-                        PingResponse.builder().nodeId(HashKey.fromString(id)).build());
+                .setPayload(new PingResponse(HashKey.fromString(id)));
 
         assertThat(message.toBuffer().getBytes()).asString().isEqualTo(payload);
     }

@@ -11,6 +11,12 @@ import vertx.bittorrent.dht.HashKey;
 @Builder
 @ToString
 public class FindNodeQuery implements QueryPayload<FindNodeResponse> {
+
+    public static final String QUERY_TYPE = "find_node";
+
+    private static final String FIELD_ID = "id";
+    private static final String FIELD_TARGET = "target";
+
     private final HashKey nodeId;
     private final HashKey target;
 
@@ -18,15 +24,15 @@ public class FindNodeQuery implements QueryPayload<FindNodeResponse> {
     public BEncodedValue value() {
         BEncodedDict dict = new BEncodedDict();
 
-        dict.put("id", nodeId.getBytes());
-        dict.put("target", target.getBytes());
+        dict.put(FIELD_ID, nodeId.getBytes());
+        dict.put(FIELD_TARGET, target.getBytes());
 
         return dict.toValue();
     }
 
     @Override
     public String queryType() {
-        return "find_node";
+        return QUERY_TYPE;
     }
 
     @Override
@@ -37,8 +43,8 @@ public class FindNodeQuery implements QueryPayload<FindNodeResponse> {
     public static FindNodeQuery from(BEncodedValue value) {
         BEncodedDict dict = BEncodedDict.from(value);
 
-        byte[] nodeId = dict.requireBytes("id");
-        byte[] target = dict.requireBytes("target");
+        byte[] nodeId = dict.requireBytes(FIELD_ID);
+        byte[] target = dict.requireBytes(FIELD_TARGET);
 
         return builder().nodeId(new HashKey(nodeId)).target(new HashKey(target)).build();
     }

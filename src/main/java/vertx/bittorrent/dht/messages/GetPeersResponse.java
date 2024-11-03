@@ -11,6 +11,12 @@ import vertx.bittorrent.dht.HashKey;
 @Getter
 @Builder
 public class GetPeersResponse implements Payload {
+
+    private static final String FIELD_ID = "id";
+    private static final String FIELD_TOKEN = "token";
+    private static final String FIELD_VALUES = "values";
+    private static final String FIELD_NODES = "nodes";
+
     private final HashKey nodeId;
     private final byte[] token;
     private final List<byte[]> values;
@@ -20,7 +26,7 @@ public class GetPeersResponse implements Payload {
     public String toString() {
         return ToStringBuilder.builder(getClass())
                 .field("nodeId", nodeId)
-                .field("token", token)
+                .field(FIELD_TOKEN, token)
                 .build();
     }
 
@@ -28,17 +34,17 @@ public class GetPeersResponse implements Payload {
     public BEncodedValue value() {
         BEncodedDict dict = new BEncodedDict();
 
-        dict.put("id", nodeId.getBytes());
-        dict.put("token", token);
+        dict.put(FIELD_ID, nodeId.getBytes());
+        dict.put(FIELD_TOKEN, token);
 
         if (values != null && !values.isEmpty()) {
             var list = values.stream().map(v -> new BEncodedValue(v)).toList();
 
-            dict.put("values", list);
+            dict.put(FIELD_VALUES, list);
         }
 
         if (nodes != null) {
-            dict.put("nodes", nodes);
+            dict.put(FIELD_NODES, nodes);
         }
 
         return dict.toValue();
@@ -47,15 +53,15 @@ public class GetPeersResponse implements Payload {
     public static GetPeersResponse from(BEncodedValue value) {
         BEncodedDict dict = BEncodedDict.from(value);
 
-        byte[] nodeId = dict.requireBytes("id");
-        byte[] token = dict.findBytes("token").orElse(null);
+        byte[] nodeId = dict.requireBytes(FIELD_ID);
+        byte[] token = dict.findBytes(FIELD_TOKEN).orElse(null);
 
-        List<byte[]> peers = dict.findList("values").stream()
+        List<byte[]> peers = dict.findList(FIELD_VALUES).stream()
                 .flatMap(v -> v.stream())
                 .map(v -> (byte[]) v.getValue())
                 .toList();
 
-        byte[] nodes = dict.findBytes("nodes").orElseGet(() -> new byte[0]);
+        byte[] nodes = dict.findBytes(FIELD_NODES).orElseGet(() -> new byte[0]);
 
         return builder()
                 .nodeId(new HashKey(nodeId))

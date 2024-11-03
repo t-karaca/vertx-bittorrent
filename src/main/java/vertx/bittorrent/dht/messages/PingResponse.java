@@ -1,23 +1,27 @@
 package vertx.bittorrent.dht.messages;
 
 import be.adaxisoft.bencode.BEncodedValue;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.ToString;
 import vertx.bittorrent.BEncodedDict;
 import vertx.bittorrent.dht.HashKey;
 
 @Getter
-@Builder
 @ToString
 public class PingResponse implements Payload {
+    private static final String FIELD_ID = "id";
+
     private final HashKey nodeId;
+
+    public PingResponse(HashKey nodeId) {
+        this.nodeId = nodeId;
+    }
 
     @Override
     public BEncodedValue value() {
         BEncodedDict dict = new BEncodedDict();
 
-        dict.put("id", nodeId.getBytes());
+        dict.put(FIELD_ID, nodeId.getBytes());
 
         return dict.toValue();
     }
@@ -25,8 +29,8 @@ public class PingResponse implements Payload {
     public static PingResponse from(BEncodedValue value) {
         BEncodedDict dict = BEncodedDict.from(value);
 
-        byte[] nodeId = dict.requireBytes("id");
+        byte[] nodeId = dict.requireBytes(FIELD_ID);
 
-        return builder().nodeId(new HashKey(nodeId)).build();
+        return new PingResponse(new HashKey(nodeId));
     }
 }

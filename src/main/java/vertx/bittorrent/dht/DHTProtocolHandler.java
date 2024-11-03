@@ -87,10 +87,10 @@ public class DHTProtocolHandler {
 
                     QueryPayload<?> payload =
                             switch (queryType) {
-                                case "ping" -> PingQuery.from(value);
-                                case "find_node" -> FindNodeQuery.from(value);
-                                case "get_peers" -> GetPeersQuery.from(value);
-                                case "announce_peer" -> AnnouncePeerQuery.from(value);
+                                case PingQuery.QUERY_TYPE -> PingQuery.from(value);
+                                case FindNodeQuery.QUERY_TYPE -> FindNodeQuery.from(value);
+                                case GetPeersQuery.QUERY_TYPE -> GetPeersQuery.from(value);
+                                case AnnouncePeerQuery.QUERY_TYPE -> AnnouncePeerQuery.from(value);
                                 default -> null;
                             };
 

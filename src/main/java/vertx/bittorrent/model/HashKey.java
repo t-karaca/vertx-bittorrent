@@ -1,4 +1,4 @@
-package vertx.bittorrent.dht;
+package vertx.bittorrent.model;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;

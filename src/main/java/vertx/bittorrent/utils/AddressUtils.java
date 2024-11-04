@@ -1,4 +1,4 @@
-package vertx.bittorrent;
+package vertx.bittorrent.utils;
 
 import io.vertx.core.net.SocketAddress;
 

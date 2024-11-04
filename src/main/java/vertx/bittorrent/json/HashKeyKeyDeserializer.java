@@ -1,9 +1,9 @@
-package vertx.bittorrent.dht.json;
+package vertx.bittorrent.json;
 
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.KeyDeserializer;
 import java.io.IOException;
-import vertx.bittorrent.dht.HashKey;
+import vertx.bittorrent.model.HashKey;
 
 public class HashKeyKeyDeserializer extends KeyDeserializer {
 

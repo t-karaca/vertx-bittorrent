@@ -4,15 +4,6 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonCreator.Mode;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.MappingJsonFactory;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.module.SimpleModule;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.vertx.core.Handler;
 import io.vertx.core.net.SocketAddress;
 import java.io.IOException;
@@ -29,18 +20,13 @@ import java.util.Optional;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import vertx.bittorrent.Peer;
-import vertx.bittorrent.RandomUtils;
-import vertx.bittorrent.dht.json.HashKeyDeserializer;
-import vertx.bittorrent.dht.json.HashKeyKeyDeserializer;
-import vertx.bittorrent.dht.json.HashKeySerializer;
-import vertx.bittorrent.dht.json.SocketAddressDeserializer;
-import vertx.bittorrent.dht.json.SocketAddressSerializer;
+import vertx.bittorrent.json.Json;
+import vertx.bittorrent.model.HashKey;
+import vertx.bittorrent.utils.RandomUtils;
 
 @Slf4j
 @Getter
 public class DHTRoutingTable {
-
-    private static final ObjectMapper OBJECT_MAPPER;
 
     private final HashKey nodeId;
     private final List<DHTBucket> buckets;
@@ -49,29 +35,6 @@ public class DHTRoutingTable {
 
     @JsonIgnore
     private Handler<Void> updatedHandler;
-
-    static {
-        JsonFactory jsonFactory = new MappingJsonFactory();
-        jsonFactory.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
-
-        SimpleModule module = new SimpleModule();
-
-        module.addSerializer(HashKey.class, new HashKeySerializer());
-        module.addDeserializer(HashKey.class, new HashKeyDeserializer());
-
-        module.addSerializer(SocketAddress.class, new SocketAddressSerializer());
-        module.addDeserializer(SocketAddress.class, new SocketAddressDeserializer());
-
-        module.addKeyDeserializer(HashKey.class, new HashKeyKeyDeserializer());
-
-        OBJECT_MAPPER = new ObjectMapper(jsonFactory)
-                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-                .disable(JsonParser.Feature.AUTO_CLOSE_SOURCE)
-                .enable(SerializationFeature.INDENT_OUTPUT)
-                .registerModule(module)
-                .registerModule(new JavaTimeModule());
-    }
 
     public DHTRoutingTable() {
         nodeId = HashKey.random();
@@ -95,6 +58,7 @@ public class DHTRoutingTable {
         this.buckets.forEach(b -> b.onRefresh(this::onBucketRefreshed));
     }
 
+    @JsonIgnore
     public boolean isEmpty() {
         return buckets.isEmpty() || buckets.size() == 1 && buckets.get(0).isEmpty();
     }
@@ -257,14 +221,10 @@ public class DHTRoutingTable {
     }
 
     public void writeTo(OutputStream outputStream) throws IOException {
-        OBJECT_MAPPER.writeValue(outputStream, this);
+        Json.prettyTo(outputStream, this);
     }
 
-    public static DHTRoutingTable parse(InputStream is) {
-        try {
-            return OBJECT_MAPPER.readValue(is, DHTRoutingTable.class);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+    public static DHTRoutingTable parse(InputStream is) throws IOException {
+        return Json.readFrom(is, DHTRoutingTable.class);
     }
 }

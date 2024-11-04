@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import vertx.bittorrent.dht.DHTClient;
+import vertx.bittorrent.utils.ByteFormat;
+import vertx.bittorrent.utils.HashUtils;
 
 @Slf4j
 public class TorrentController {

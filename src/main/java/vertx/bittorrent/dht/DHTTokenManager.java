@@ -7,7 +7,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Random;
-import vertx.bittorrent.HashUtils;
+import vertx.bittorrent.utils.HashUtils;
 
 public class DHTTokenManager {
     private static final int SECRET_LENGTH = 8;

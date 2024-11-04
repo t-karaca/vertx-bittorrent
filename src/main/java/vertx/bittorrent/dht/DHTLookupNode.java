@@ -3,6 +3,7 @@ package vertx.bittorrent.dht;
 import java.util.Comparator;
 import lombok.Getter;
 import lombok.Setter;
+import vertx.bittorrent.model.HashKey;
 
 public class DHTLookupNode {
     @Getter

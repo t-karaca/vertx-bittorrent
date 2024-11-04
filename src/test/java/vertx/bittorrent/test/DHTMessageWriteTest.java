@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import vertx.bittorrent.dht.HashKey;
 import vertx.bittorrent.dht.messages.AnnouncePeerQuery;
 import vertx.bittorrent.dht.messages.AnnouncePeerResponse;
 import vertx.bittorrent.dht.messages.DHTErrorMessage;
@@ -17,6 +16,7 @@ import vertx.bittorrent.dht.messages.GetPeersQuery;
 import vertx.bittorrent.dht.messages.GetPeersResponse;
 import vertx.bittorrent.dht.messages.PingQuery;
 import vertx.bittorrent.dht.messages.PingResponse;
+import vertx.bittorrent.model.HashKey;
 
 public class DHTMessageWriteTest {
     @Test

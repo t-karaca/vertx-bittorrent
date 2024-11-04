@@ -23,6 +23,7 @@ import vertx.bittorrent.messages.NotInterestedMessage;
 import vertx.bittorrent.messages.PieceMessage;
 import vertx.bittorrent.messages.RequestMessage;
 import vertx.bittorrent.messages.UnchokeMessage;
+import vertx.bittorrent.utils.HashUtils;
 
 @Slf4j
 public class PeerConnection {

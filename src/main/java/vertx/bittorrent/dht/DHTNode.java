@@ -18,7 +18,8 @@ import java.util.Comparator;
 import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
-import vertx.bittorrent.ToStringBuilder;
+import vertx.bittorrent.model.HashKey;
+import vertx.bittorrent.utils.ToStringBuilder;
 
 @Getter
 public class DHTNode {

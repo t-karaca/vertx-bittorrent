@@ -1,4 +1,4 @@
-package vertx.bittorrent;
+package vertx.bittorrent.utils;
 
 import java.net.URI;
 import java.net.URLEncoder;

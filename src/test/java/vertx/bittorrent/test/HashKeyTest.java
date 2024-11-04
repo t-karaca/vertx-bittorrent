@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.HexFormat;
 import org.junit.jupiter.api.Test;
-import vertx.bittorrent.dht.HashKey;
+import vertx.bittorrent.model.HashKey;
 
 public class HashKeyTest {
     @Test

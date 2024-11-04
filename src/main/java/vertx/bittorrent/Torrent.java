@@ -16,6 +16,8 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
+import vertx.bittorrent.utils.ByteFormat;
+import vertx.bittorrent.utils.HashUtils;
 
 @Slf4j
 @Getter

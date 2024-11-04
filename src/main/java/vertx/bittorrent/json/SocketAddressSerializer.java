@@ -1,4 +1,4 @@
-package vertx.bittorrent.dht.json;
+package vertx.bittorrent.json;
 
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.SerializerProvider;

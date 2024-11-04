@@ -4,8 +4,8 @@ import be.adaxisoft.bencode.BEncodedValue;
 import lombok.Builder;
 import lombok.Getter;
 import vertx.bittorrent.BEncodedDict;
-import vertx.bittorrent.ToStringBuilder;
-import vertx.bittorrent.dht.HashKey;
+import vertx.bittorrent.model.HashKey;
+import vertx.bittorrent.utils.ToStringBuilder;
 
 @Getter
 @Builder

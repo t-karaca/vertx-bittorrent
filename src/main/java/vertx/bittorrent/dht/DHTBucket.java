@@ -11,7 +11,8 @@ import java.util.List;
 import java.util.Optional;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import vertx.bittorrent.RandomUtils;
+import vertx.bittorrent.model.HashKey;
+import vertx.bittorrent.utils.RandomUtils;
 
 @Slf4j
 @Getter

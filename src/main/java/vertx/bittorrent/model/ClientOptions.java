@@ -1,6 +1,7 @@
 package vertx.bittorrent.model;
 
 import com.beust.jcommander.Parameter;
+import java.util.List;
 import lombok.Getter;
 
 @Getter
@@ -9,5 +10,5 @@ public class ClientOptions {
     private int serverPort;
 
     @Parameter
-    private String torrentFilePath;
+    private List<String> torrentFilePath;
 }

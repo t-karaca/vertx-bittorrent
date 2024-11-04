@@ -12,6 +12,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.IntStream;
 import lombok.extern.slf4j.Slf4j;
 import vertx.bittorrent.dht.DHTClient;
 import vertx.bittorrent.model.ClientOptions;
@@ -19,6 +20,7 @@ import vertx.bittorrent.model.Peer;
 import vertx.bittorrent.model.Torrent;
 import vertx.bittorrent.utils.ByteFormat;
 import vertx.bittorrent.utils.HashUtils;
+import vertx.bittorrent.utils.RandomUtils;
 
 @Slf4j
 public class TorrentController {
@@ -50,6 +52,8 @@ public class TorrentController {
     private long optimisticUnchokeTimerId = -1;
 
     private long connectTimerId = -1;
+
+    private boolean enteredEndGame = false;
 
     private List<Peer> connectionQueue = new ArrayList<>();
 
@@ -267,6 +271,20 @@ public class TorrentController {
         return (int) connections.stream().filter(conn -> !conn.isChoked()).count();
     }
 
+    private int getRequestedPiecesCount() {
+        return connections.stream()
+                .map(PeerConnection::getRequestedPiecesCount)
+                .reduce(Integer::sum)
+                .orElse(0);
+    }
+
+    private boolean isEndGame() {
+        int missingPieces = (int) torrentState.getTorrent().getPiecesCount()
+                - torrentState.getBitfield().cardinality();
+
+        return getRequestedPiecesCount() + processingPieces.size() >= missingPieces;
+    }
+
     private boolean isConnectedToPeer(Peer peer) {
         for (var connection : connections) {
             if (connection.getPeer().equals(peer)) {
@@ -277,7 +295,7 @@ public class TorrentController {
         return false;
     }
 
-    private boolean hasRequiredPiece(PeerConnection connection, int pieceIndex) {
+    private boolean canRequestPiece(PeerConnection connection, int pieceIndex) {
         return !torrentState.getBitfield().hasPiece(pieceIndex)
                 && connection.getBitfield().hasPiece(pieceIndex)
                 && !isPieceRequested(pieceIndex)
@@ -286,7 +304,7 @@ public class TorrentController {
 
     private boolean hasRequiredPieces(PeerConnection connection) {
         for (int i = 0; i < torrentState.getTorrent().getPiecesCount(); i++) {
-            if (hasRequiredPiece(connection, i)) {
+            if (canRequestPiece(connection, i)) {
                 return true;
             }
         }
@@ -294,29 +312,41 @@ public class TorrentController {
         return false;
     }
 
-    private int requestNextPiece(PeerConnection connection) {
+    private void requestNextPieces(PeerConnection connection) {
         if (!connection.isInterested() || connection.isRemoteChoked()) {
-            return -1;
+            return;
         }
 
-        int pieceIndex = -1;
+        int numPieces = connection.getMaxRequestedPieces() - connection.getRequestedPiecesCount();
 
-        for (int i = 0; i < torrentState.getTorrent().getPiecesCount(); i++) {
-            if (hasRequiredPiece(connection, i)) {
-                if (pieceIndex == -1) {
-                    pieceIndex = i;
-                } else if (random.nextInt((int) torrentState.getTorrent().getPiecesCount()) == 0) {
-                    pieceIndex = i;
-                }
-            }
+        for (int i = 0; i < numPieces; i++) {
+            IntStream.range(0, (int) torrentState.getTorrent().getPiecesCount())
+                    .filter(index -> canRequestPiece(connection, index))
+                    .reduce(RandomUtils::reservoirSample)
+                    .ifPresent(pieceIndex -> {
+                        log.debug("Requesting piece {} from peer {}", pieceIndex, connection.getPeer());
+                        connection.requestPiece(pieceIndex);
+                    });
+        }
+    }
+
+    private void enterEndGame() {
+        if (enteredEndGame) {
+            return;
         }
 
-        if (pieceIndex != -1) {
-            log.debug("Requesting piece {} from peer {}", pieceIndex, connection.getPeer());
-            connection.requestPiece(pieceIndex);
-        }
+        enteredEndGame = true;
 
-        return pieceIndex;
+        log.info("Entering end game");
+
+        IntStream.range(0, (int) torrentState.getTorrent().getPiecesCount())
+                .filter(index -> !torrentState.getBitfield().hasPiece(index))
+                .forEach(index -> connections.stream()
+                        .filter(conn -> conn.getBitfield().hasPiece(index))
+                        .sorted(Comparator.comparingDouble(PeerConnection::getAverageDownloadRate)
+                                .reversed())
+                        .limit(10)
+                        .forEach(conn -> conn.requestPiece(index)));
     }
 
     private boolean isProcessingPiece(int pieceIndex) {
@@ -421,7 +451,7 @@ public class TorrentController {
         });
 
         connection.onHasPiece(i -> {
-            if (!connection.isInterested() && hasRequiredPiece(connection, i)) {
+            if (!connection.isInterested() && canRequestPiece(connection, i)) {
                 connection.interested();
             }
         });
@@ -435,7 +465,12 @@ public class TorrentController {
                         .onFailure(ex -> {
                             log.error("Could not write piece to file", ex);
                             processingPieces.remove(piece.getIndex());
-                            requestNextPiece(connection);
+
+                            if (isEndGame()) {
+                                enterEndGame();
+                            } else {
+                                requestNextPieces(connection);
+                            }
                         })
                         .onSuccess(v -> {
                             processingPieces.remove(piece.getIndex());
@@ -444,6 +479,10 @@ public class TorrentController {
 
                             for (var conn : connections) {
                                 conn.have(piece.getIndex());
+                            }
+
+                            if (isEndGame()) {
+                                connections.forEach(conn -> conn.cancelPiece(piece.getIndex()));
                             }
 
                             if (torrentState.isTorrentComplete()) {
@@ -457,18 +496,22 @@ public class TorrentController {
 
                                 // vertx.cancelTimer(timerId);
                             } else {
-                                requestNextPiece(connection);
+                                if (isEndGame()) {
+                                    enterEndGame();
+                                } else {
+                                    requestNextPieces(connection);
+                                }
                             }
                         });
             } else {
                 // peer sent faulty piece
-                log.warn("Received invalid piece for index: {}", piece.getIndex());
-                requestNextPiece(connection);
+                log.warn("Received invalid piece for index {} from {}", piece.getIndex(), connection.getPeer());
+                requestNextPieces(connection);
             }
         });
 
         connection.onUnchoked(v -> {
-            requestNextPiece(connection);
+            requestNextPieces(connection);
         });
 
         connection.onClosed(v -> {

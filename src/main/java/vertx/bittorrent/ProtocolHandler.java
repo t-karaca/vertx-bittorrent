@@ -5,6 +5,7 @@ import io.vertx.core.buffer.Buffer;
 import java.nio.ByteBuffer;
 import lombok.extern.slf4j.Slf4j;
 import vertx.bittorrent.messages.BitfieldMessage;
+import vertx.bittorrent.messages.CancelMessage;
 import vertx.bittorrent.messages.ChokeMessage;
 import vertx.bittorrent.messages.HandshakeMessage;
 import vertx.bittorrent.messages.HaveMessage;
@@ -156,6 +157,7 @@ public class ProtocolHandler {
                             case BITFIELD -> BitfieldMessage.fromBuffer(input);
                             case REQUEST -> RequestMessage.fromBuffer(input);
                             case PIECE -> PieceMessage.fromBuffer(input);
+                            case CANCEL -> CancelMessage.fromBuffer(input);
                             default -> null;};
                     }
 

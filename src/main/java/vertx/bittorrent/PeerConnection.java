@@ -13,6 +13,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import vertx.bittorrent.PieceState.BlockState;
 import vertx.bittorrent.messages.BitfieldMessage;
+import vertx.bittorrent.messages.CancelMessage;
 import vertx.bittorrent.messages.ChokeMessage;
 import vertx.bittorrent.messages.HandshakeMessage;
 import vertx.bittorrent.messages.HaveMessage;
@@ -29,6 +30,8 @@ import vertx.bittorrent.utils.HashUtils;
 
 @Slf4j
 public class PeerConnection {
+
+    private static final int MAX_REQUESTED_PIECES_LIMIT = 3;
 
     private final long connectedAt = System.currentTimeMillis();
 
@@ -101,6 +104,9 @@ public class PeerConnection {
     @Getter
     private long faultyPieces = 0;
 
+    @Getter
+    private int maxRequestedPieces = 1;
+
     private int currentRequestCount = 0;
     private int requestLimit = 12;
 
@@ -135,7 +141,7 @@ public class PeerConnection {
         });
 
         socket.closeHandler(v -> {
-            log.info("[{}] Peer disconnected", peer);
+            log.debug("[{}] Peer disconnected", peer);
 
             if (closedHandler != null) {
                 closedHandler.handle(null);
@@ -388,6 +394,28 @@ public class PeerConnection {
         }
     }
 
+    public void cancelPiece(int pieceIndex) {
+        PieceState pieceState = pieceStates.get(pieceIndex);
+
+        if (pieceState != null) {
+            for (int i = 0; i < pieceState.getBlocksCount(); i++) {
+                if (pieceState.getBlockState(i) == BlockState.Requested) {
+                    currentRequestCount--;
+
+                    if (currentRequestCount <= 0 && requestedAt != -1) {
+                        requestingDuration += (System.currentTimeMillis() - requestedAt);
+                        requestedAt = -1;
+                    }
+
+                    sendMessage(
+                            new CancelMessage(pieceIndex, pieceState.getBlockOffset(i), pieceState.getBlockSize(i)));
+                }
+            }
+
+            pieceStates.remove(pieceIndex);
+        }
+    }
+
     private boolean canRequest() {
         if (remoteChoked || pieceStates.isEmpty()) {
             return false;
@@ -551,6 +579,8 @@ public class PeerConnection {
 
                         if (!hashValid) {
                             faultyPieces++;
+                        } else {
+                            maxRequestedPieces = Math.min(maxRequestedPieces + 1, MAX_REQUESTED_PIECES_LIMIT);
                         }
 
                         if (pieceHandler != null) {
@@ -580,9 +610,9 @@ public class PeerConnection {
         log.debug("[{}] Trying to connect to peer", peer);
 
         return client.connect(peer.getAddress())
-                .onFailure(ex -> log.error("[{}] Could not connect to peer: {}", peer, ex.getMessage()))
+                .onFailure(ex -> log.debug("[{}] Could not connect to peer: {}", peer, ex.getMessage()))
                 .map(socket -> new PeerConnection(socket, clientState, torrentState, peer))
-                .onSuccess(conn -> log.info("[{}] Connected to peer", peer))
+                .onSuccess(conn -> log.debug("[{}] Connected to peer", peer))
                 .onSuccess(conn -> conn.handshake());
     }
 }

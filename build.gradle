@@ -2,8 +2,8 @@ plugins {
     id "java"
     id "application"
 
-    id "io.freefair.lombok" version "6.6.3"
-    id "com.diffplug.spotless" version "6.21.0"
+    id "io.freefair.lombok" version "8.10.2"
+    id "com.diffplug.spotless" version "6.25.0"
 }
 
 sourceCompatibility = 17
@@ -13,13 +13,11 @@ application {
 }
 
 lombok {
-    version = "1.18.28"
+    version = "1.18.34"
 }
 
 spotless {
     java {
-        targetExclude "build/generated/**"
-
         palantirJavaFormat "2.38.0"
     }
 }

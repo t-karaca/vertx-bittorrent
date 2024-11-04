@@ -50,6 +50,11 @@ public class Tracker {
     }
 
     public Future<Void> announce() {
+        if (StringUtils.isBlank(torrentState.getTorrent().getAnnounce())) {
+            log.warn("Cannot announce to tracker since torrent has no announce url");
+            return Future.succeededFuture();
+        }
+
         closing = false;
 
         return request("started")
@@ -60,10 +65,18 @@ public class Tracker {
     }
 
     public Future<Void> completed() {
+        if (StringUtils.isBlank(torrentState.getTorrent().getAnnounce())) {
+            return Future.succeededFuture();
+        }
+
         return request("completed").mapEmpty();
     }
 
     public Future<Void> close() {
+        if (StringUtils.isBlank(torrentState.getTorrent().getAnnounce())) {
+            return Future.succeededFuture();
+        }
+
         vertx.cancelTimer(timerId);
 
         closing = true;

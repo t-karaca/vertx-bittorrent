@@ -65,27 +65,20 @@ public class TorrentController {
     }
 
     public void start(Torrent torrent) {
-        // clientState = new ClientState(vertx, torrent, clientOptions.getDataDir());
         // torrentState = new TorrentState(vertx, torrent, clientOptions.getDataDir());
         torrentState = new TorrentState(vertx, torrent, ".");
 
-        // tracker = new Tracker(vertx, clientState, torrentState);
-        //
-        // tracker.onPeersReceived(peers -> {
-        //     for (Peer peer : peers) {
-        //         if (!isConnectedToPeer(peer) && !connectionQueue.contains(peer)) {
-        //             connectionQueue.add(peer);
-        //         }
-        //     }
-        //
-        //     if (connectTimerId == -1) {
-        //         connectToPeers();
-        //
-        //         connectTimerId = vertx.setPeriodic(10_000, id -> {
-        //             connectToPeers();
-        //         });
-        //     }
-        // });
+        tracker = new Tracker(vertx, clientState, torrentState);
+
+        tracker.onPeersReceived(peers -> {
+            for (Peer peer : peers) {
+                if (!isConnectedToPeer(peer) && !connectionQueue.contains(peer)) {
+                    connectionQueue.add(peer);
+                }
+            }
+
+            connectToPeers();
+        });
 
         netClient = vertx.createNetClient(new NetClientOptions().setConnectTimeout(5_000));
         netServer = vertx.createNetServer();
@@ -116,18 +109,12 @@ public class TorrentController {
                                     }
                                 }
 
-                                if (connectTimerId == -1) {
-                                    connectToPeers();
-
-                                    connectTimerId = vertx.setPeriodic(10_000, id2 -> {
-                                        connectToPeers();
-                                    });
-                                }
+                                connectToPeers();
                             });
                         }
                     });
 
-                    // tracker.announce();
+                    tracker.announce();
                 });
 
         timerId = vertx.setPeriodic(1_000, id -> {
@@ -230,35 +217,42 @@ public class TorrentController {
         vertx.cancelTimer(timerId);
         vertx.cancelTimer(unchokeTimerId);
         vertx.cancelTimer(optimisticUnchokeTimerId);
+        vertx.cancelTimer(connectTimerId);
 
         return Future.join(netServer.close(), netClient.close(), torrentState.close(), tracker.close())
                 .mapEmpty();
     }
 
     private void connectToPeers() {
-        int connectionsToOpen =
-                Math.min(maxConnections - connections.size() - connectingPeers.size(), connectionQueue.size());
-
-        if (connectionsToOpen <= 0) {
+        if (connectTimerId != -1) {
             return;
         }
 
-        log.info("Trying to open {} connections", connectionsToOpen);
+        connectTimerId = vertx.setPeriodic(0L, 10_000, id -> {
+            int connectionsToOpen =
+                    Math.min(maxConnections - connections.size() - connectingPeers.size(), connectionQueue.size());
 
-        while (connectionsToOpen > 0 && connectionQueue.size() > 0) {
-            int index = random.nextInt(connectionQueue.size());
-
-            Peer peer = connectionQueue.remove(index);
-
-            if (isConnectedToPeer(peer)) {
-                continue;
+            if (connectionsToOpen <= 0) {
+                return;
             }
 
-            connectingPeers.add(peer);
+            log.debug("Trying to open {} connections", connectionsToOpen);
 
-            connectionsToOpen--;
-            connectToPeer(peer).onComplete(ar -> connectingPeers.remove(peer));
-        }
+            while (connectionsToOpen > 0 && connectionQueue.size() > 0) {
+                int index = random.nextInt(connectionQueue.size());
+
+                Peer peer = connectionQueue.remove(index);
+
+                if (isConnectedToPeer(peer)) {
+                    continue;
+                }
+
+                connectingPeers.add(peer);
+
+                connectionsToOpen--;
+                connectToPeer(peer).onComplete(ar -> connectingPeers.remove(peer));
+            }
+        });
     }
 
     private int getSeedingPeersCount() {

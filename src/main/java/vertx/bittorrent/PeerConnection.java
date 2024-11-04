@@ -132,7 +132,7 @@ public class PeerConnection {
         this.bitfield = Bitfield.fromSize((int) torrentState.getTorrent().getPiecesCount());
 
         socket.exceptionHandler(ex -> {
-            log.error("[{}] Error", peer, ex);
+            log.debug("[{}] Error", peer, ex);
         });
 
         socket.handler(buffer -> {

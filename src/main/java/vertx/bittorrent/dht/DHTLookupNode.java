@@ -29,6 +29,11 @@ public class DHTLookupNode {
         this.node = node;
     }
 
+    @Override
+    public String toString() {
+        return node.toString();
+    }
+
     public HashKey getNodeId() {
         return node.getNodeId();
     }

@@ -106,7 +106,7 @@ public class DHTLookup {
                                 .infoHash(key.getBytes())
                                 .build())
                 .onFailure(e -> {
-                    log.error("[{}] Failed get peers query: {}", key, e.getMessage());
+                    log.debug("[{}] Failed get peers query: {}", key, e.getMessage());
 
                     node.setQueryFailed(true);
                     node.setQueried(true);

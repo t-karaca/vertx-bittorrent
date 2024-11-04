@@ -11,6 +11,7 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import vertx.bittorrent.dht.DHTClient;
+import vertx.bittorrent.model.ClientOptions;
 
 @Slf4j
 @RequiredArgsConstructor

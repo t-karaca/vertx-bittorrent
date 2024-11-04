@@ -1,4 +1,4 @@
-package vertx.bittorrent;
+package vertx.bittorrent.model;
 
 import be.adaxisoft.bencode.BEncodedValue;
 import java.io.IOException;
@@ -8,6 +8,7 @@ import java.util.List;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.ToString;
+import vertx.bittorrent.BEncodedDict;
 
 @Getter
 @RequiredArgsConstructor

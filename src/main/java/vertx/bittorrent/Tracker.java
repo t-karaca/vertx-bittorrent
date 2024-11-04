@@ -14,6 +14,9 @@ import java.util.Set;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import vertx.bittorrent.model.Peer;
+import vertx.bittorrent.model.Torrent;
+import vertx.bittorrent.model.TrackerResponse;
 import vertx.bittorrent.utils.UriBuilder;
 
 @Slf4j

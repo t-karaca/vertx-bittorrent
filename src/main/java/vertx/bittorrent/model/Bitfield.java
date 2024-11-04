@@ -1,4 +1,4 @@
-package vertx.bittorrent;
+package vertx.bittorrent.model;
 
 import java.util.ArrayList;
 import java.util.BitSet;

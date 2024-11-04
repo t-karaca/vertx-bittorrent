@@ -1,4 +1,4 @@
-package vertx.bittorrent;
+package vertx.bittorrent.model;
 
 import lombok.Builder;
 import lombok.Getter;

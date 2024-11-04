@@ -1,4 +1,4 @@
-package vertx.bittorrent;
+package vertx.bittorrent.model;
 
 import be.adaxisoft.bencode.BDecoder;
 import be.adaxisoft.bencode.BEncodedValue;
@@ -16,6 +16,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
+import vertx.bittorrent.BEncodedDict;
 import vertx.bittorrent.utils.ByteFormat;
 import vertx.bittorrent.utils.HashUtils;
 

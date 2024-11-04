@@ -26,6 +26,10 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import vertx.bittorrent.model.Bitfield;
+import vertx.bittorrent.model.FileInfo;
+import vertx.bittorrent.model.FilePosition;
+import vertx.bittorrent.model.Torrent;
 import vertx.bittorrent.utils.HashUtils;
 
 @Slf4j

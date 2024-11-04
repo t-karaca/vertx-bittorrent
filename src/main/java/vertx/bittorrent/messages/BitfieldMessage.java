@@ -6,7 +6,7 @@ import java.util.HexFormat;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
-import vertx.bittorrent.Bitfield;
+import vertx.bittorrent.model.Bitfield;
 
 @Getter
 @RequiredArgsConstructor

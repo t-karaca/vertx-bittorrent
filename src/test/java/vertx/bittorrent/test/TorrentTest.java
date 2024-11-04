@@ -11,8 +11,8 @@ import java.nio.ByteBuffer;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import vertx.bittorrent.Torrent;
-import vertx.bittorrent.TrackerResponse;
+import vertx.bittorrent.model.Torrent;
+import vertx.bittorrent.model.TrackerResponse;
 
 public class TorrentTest {
     @Test

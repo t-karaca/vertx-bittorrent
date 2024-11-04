@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.Base64;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import vertx.bittorrent.Bitfield;
+import vertx.bittorrent.model.Bitfield;
 
 public class BitfieldTest {
     @Test

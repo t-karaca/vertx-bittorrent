@@ -5,6 +5,7 @@ import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import vertx.bittorrent.model.ClientOptions;
 
 @Slf4j
 public class ClientApplication {

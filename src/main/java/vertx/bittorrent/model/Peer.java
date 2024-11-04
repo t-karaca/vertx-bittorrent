@@ -1,4 +1,4 @@
-package vertx.bittorrent;
+package vertx.bittorrent.model;
 
 import io.vertx.core.net.SocketAddress;
 import java.net.InetAddress;
@@ -7,6 +7,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import vertx.bittorrent.BEncodedDict;
 
 @Getter
 @Slf4j

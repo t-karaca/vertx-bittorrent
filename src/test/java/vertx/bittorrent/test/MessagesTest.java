@@ -7,7 +7,6 @@ import java.nio.ByteBuffer;
 import java.util.Base64;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import vertx.bittorrent.Bitfield;
 import vertx.bittorrent.messages.BitfieldMessage;
 import vertx.bittorrent.messages.ChokeMessage;
 import vertx.bittorrent.messages.HandshakeMessage;
@@ -16,6 +15,7 @@ import vertx.bittorrent.messages.NotInterestedMessage;
 import vertx.bittorrent.messages.PieceMessage;
 import vertx.bittorrent.messages.RequestMessage;
 import vertx.bittorrent.messages.UnchokeMessage;
+import vertx.bittorrent.model.Bitfield;
 
 public class MessagesTest {
     @Test

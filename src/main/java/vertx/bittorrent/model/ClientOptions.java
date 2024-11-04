@@ -1,4 +1,4 @@
-package vertx.bittorrent;
+package vertx.bittorrent.model;
 
 import com.beust.jcommander.Parameter;
 import lombok.Getter;

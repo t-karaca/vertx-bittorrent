@@ -19,9 +19,9 @@ import java.util.Map;
 import java.util.Optional;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import vertx.bittorrent.Peer;
 import vertx.bittorrent.json.Json;
 import vertx.bittorrent.model.HashKey;
+import vertx.bittorrent.model.Peer;
 import vertx.bittorrent.utils.RandomUtils;
 
 @Slf4j

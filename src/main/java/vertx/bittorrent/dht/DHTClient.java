@@ -13,7 +13,6 @@ import java.util.Collections;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import vertx.bittorrent.Peer;
 import vertx.bittorrent.dht.exception.DHTErrorException;
 import vertx.bittorrent.dht.messages.AnnouncePeerQuery;
 import vertx.bittorrent.dht.messages.AnnouncePeerResponse;
@@ -24,6 +23,7 @@ import vertx.bittorrent.dht.messages.GetPeersResponse;
 import vertx.bittorrent.dht.messages.PingQuery;
 import vertx.bittorrent.dht.messages.PingResponse;
 import vertx.bittorrent.model.HashKey;
+import vertx.bittorrent.model.Peer;
 import vertx.bittorrent.utils.AddressUtils;
 import vertx.bittorrent.utils.RandomUtils;
 

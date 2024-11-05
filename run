@@ -2,8 +2,6 @@
 
 set -e
 
-if [ ! -f "./build/install/vertx-bittorrent/bin/vertx-bittorrent" ]; then
-    ./gradlew installDist
-fi
+./gradlew installDist
 
 ./build/install/vertx-bittorrent/bin/vertx-bittorrent "$@"

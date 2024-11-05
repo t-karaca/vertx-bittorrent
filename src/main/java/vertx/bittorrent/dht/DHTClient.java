@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import vertx.bittorrent.ClientState;
 import vertx.bittorrent.dht.exception.DHTErrorException;
 import vertx.bittorrent.dht.messages.AnnouncePeerQuery;
 import vertx.bittorrent.dht.messages.AnnouncePeerResponse;
@@ -33,6 +34,7 @@ public class DHTClient {
     private static final int FIND_NODE_CONCURRENCY = 3;
 
     private final Vertx vertx;
+    private final ClientState clientState;
 
     private final DHTProtocolHandler protocolHandler;
     private final DHTTokenManager tokenManager;
@@ -52,12 +54,14 @@ public class DHTClient {
     private int activeFindNodeQueries = 0;
     private int emptyFindNodeQueries = 0;
 
-    public DHTClient(Vertx vertx) {
+    public DHTClient(Vertx vertx, ClientState clientState) {
         log.info("Starting dht client");
 
         this.vertx = vertx;
-        this.protocolHandler = new DHTProtocolHandler(vertx);
-        this.tokenManager = new DHTTokenManager(vertx);
+        this.clientState = clientState;
+
+        protocolHandler = new DHTProtocolHandler(vertx);
+        tokenManager = new DHTTokenManager(vertx);
 
         protocolHandler.onQuery(PingQuery.class, this::onPingQuery);
         protocolHandler.onQuery(FindNodeQuery.class, this::onFindNodeQuery);
@@ -330,7 +334,7 @@ public class DHTClient {
                                 .nodeId(routingTable.getNodeId())
                                 .infoHash(infoHash)
                                 .token(token)
-                                .port(6882)
+                                .port(clientState.getServerPort())
                                 .build())
                 .onFailure(e -> log.debug("Error on announce peer: {}", e.getMessage()))
                 .onSuccess(res -> log.info("Successfully announced to {}", node));

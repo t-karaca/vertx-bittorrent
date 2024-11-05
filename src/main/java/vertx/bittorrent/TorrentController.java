@@ -4,15 +4,14 @@ import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetClientOptions;
-import io.vertx.core.net.NetServer;
 import java.security.SecureRandom;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.IntStream;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import vertx.bittorrent.dht.DHTClient;
 import vertx.bittorrent.model.ClientOptions;
@@ -30,6 +29,7 @@ public class TorrentController {
     private final ClientOptions clientOptions;
     private final DHTClient dhtClient;
 
+    @Getter
     private TorrentState torrentState;
 
     private final List<PeerConnection> connections = new ArrayList<>();
@@ -39,7 +39,6 @@ public class TorrentController {
     private ClientState clientState;
     private Tracker tracker;
     private NetClient netClient;
-    private NetServer netServer;
 
     private int maxConnections = 50;
     private int maxLeechingPeers = 3;
@@ -81,41 +80,25 @@ public class TorrentController {
         });
 
         netClient = vertx.createNetClient(new NetClientOptions().setConnectTimeout(5_000));
-        netServer = vertx.createNetServer();
 
-        netServer.connectHandler(socket -> {
-            Peer peer = new Peer(socket.remoteAddress());
-            log.debug("[{}] Peer connected", peer);
+        torrentState.checkPiecesOnDisk().onSuccess(server -> {
+            tracker.announce();
 
-            PeerConnection connection = new PeerConnection(socket, clientState, torrentState, peer);
+            vertx.setPeriodic(0, 300_000, id -> {
+                if (dhtClient != null) {
 
-            setupPeerConnection(connection);
-        });
-
-        torrentState
-                .checkPiecesOnDisk()
-                .flatMap(v -> netServer.listen(clientOptions.getServerPort()))
-                .onSuccess(server -> {
-                    log.info("Listening on port {}", server.actualPort());
-                    torrentState.setServerPort(server.actualPort());
-
-                    vertx.setPeriodic(0, 60_000, id -> {
-                        if (dhtClient != null) {
-
-                            dhtClient.lookupTorrent(torrentState.getTorrent().getInfoHash(), peers -> {
-                                for (Peer peer : peers) {
-                                    if (!isConnectedToPeer(peer) && !connectionQueue.contains(peer)) {
-                                        connectionQueue.add(peer);
-                                    }
-                                }
-
-                                connectToPeers();
-                            });
+                    dhtClient.lookupTorrent(torrentState.getTorrent().getInfoHash(), peers -> {
+                        for (Peer peer : peers) {
+                            if (!isConnectedToPeer(peer) && !connectionQueue.contains(peer)) {
+                                connectionQueue.add(peer);
+                            }
                         }
-                    });
 
-                    tracker.announce();
-                });
+                        connectToPeers();
+                    });
+                }
+            });
+        });
 
         timerId = vertx.setPeriodic(1_000, id -> {
             double totalDownloadRate = 0.0;
@@ -219,7 +202,7 @@ public class TorrentController {
         vertx.cancelTimer(optimisticUnchokeTimerId);
         vertx.cancelTimer(connectTimerId);
 
-        return Future.join(netServer.close(), netClient.close(), torrentState.close(), tracker.close())
+        return Future.join(netClient.close(), torrentState.close(), tracker.close())
                 .mapEmpty();
     }
 
@@ -377,32 +360,15 @@ public class TorrentController {
     }
 
     private void setupPeerConnection(PeerConnection connection) {
-
         connections.add(connection);
 
         connection.onHandshake(handshake -> {
-            if (Arrays.equals(handshake.getPeerId(), clientState.getPeerId())) {
-                // we connected to ourselves
-                connection.close();
-            }
-
-            // clientState
-            //         .getTorrentByInfoHash(handshake.getInfoHash())
-            //         .ifPresentOrElse(connection::assignTorrent, connection::close);
-
             if (!HashUtils.isEqual(
                     handshake.getInfoHash(), torrentState.getTorrent().getInfoHash())) {
                 // other peer requested unknown info hash (e.g. other torrent)
                 connection.close();
-            } else if (Arrays.equals(handshake.getPeerId(), clientState.getPeerId())) {
-                // we connected to ourselves
-                connection.close();
-            } else {
-                connection.handshake();
-
-                if (torrentState.getBitfield().hasAnyPieces()) {
-                    connection.bitfield();
-                }
+            } else if (torrentState.getBitfield().hasAnyPieces()) {
+                connection.bitfield();
             }
         });
 
@@ -515,5 +481,16 @@ public class TorrentController {
                 unchokeNext();
             }
         });
+    }
+
+    public void assignConnection(PeerConnection connection) {
+        connection.setTorrentState(torrentState);
+        connection.handshake();
+
+        if (torrentState.getBitfield().hasAnyPieces()) {
+            connection.bitfield();
+        }
+
+        setupPeerConnection(connection);
     }
 }

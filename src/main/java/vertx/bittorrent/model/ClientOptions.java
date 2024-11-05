@@ -7,8 +7,20 @@ import lombok.Getter;
 @Getter
 public class ClientOptions {
     @Parameter(names = "--server-port")
-    private int serverPort;
+    private int serverPort = 6881;
+
+    @Parameter(names = "--debug")
+    private boolean debug = false;
+
+    @Parameter(names = "--dht-disable")
+    private boolean dhtDisable = false;
+
+    @Parameter(names = "--dht-port")
+    private int dhtPort = 6881;
+
+    @Parameter(names = "--dht-debug")
+    private boolean dhtDebug = false;
 
     @Parameter
-    private List<String> torrentFilePath;
+    private List<String> torrentFilePaths;
 }

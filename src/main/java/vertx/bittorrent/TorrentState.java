@@ -23,7 +23,6 @@ import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import lombok.Getter;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import vertx.bittorrent.model.Bitfield;
@@ -43,10 +42,6 @@ public class TorrentState {
     private final Bitfield bitfield;
 
     private final String dataDir;
-
-    @Getter
-    @Setter
-    private int serverPort;
 
     public TorrentState(Vertx vertx, Torrent torrent, String dataDir) {
         String directory = StringUtils.isBlank(dataDir) ? "." : dataDir;
@@ -98,6 +93,8 @@ public class TorrentState {
     }
 
     public Future<Void> checkPiecesOnDisk() {
+        // fast and memory efficient implementation to check pieces of large files
+
         int numThreads = Runtime.getRuntime().availableProcessors();
 
         log.debug("Checking completed pieces with {} threads ...", numThreads);

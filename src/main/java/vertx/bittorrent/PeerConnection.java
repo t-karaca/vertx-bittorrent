@@ -37,7 +37,9 @@ public class PeerConnection {
 
     private final NetSocket socket;
     private final ClientState clientState;
-    private final TorrentState torrentState;
+
+    @Getter
+    private TorrentState torrentState;
 
     @Getter
     private final Peer peer;
@@ -129,7 +131,9 @@ public class PeerConnection {
         this.torrentState = torrentState;
         this.peer = peer;
 
-        this.bitfield = Bitfield.fromSize((int) torrentState.getTorrent().getPiecesCount());
+        if (torrentState != null) {
+            this.bitfield = Bitfield.fromSize((int) torrentState.getTorrent().getPiecesCount());
+        }
 
         socket.exceptionHandler(ex -> {
             log.debug("[{}] Error", peer, ex);
@@ -147,6 +151,14 @@ public class PeerConnection {
                 closedHandler.handle(null);
             }
         });
+    }
+
+    public PeerConnection setTorrentState(TorrentState torrentState) {
+        this.torrentState = torrentState;
+
+        this.bitfield = Bitfield.fromSize((int) torrentState.getTorrent().getPiecesCount());
+
+        return this;
     }
 
     /**

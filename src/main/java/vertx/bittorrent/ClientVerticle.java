@@ -36,7 +36,7 @@ public class ClientVerticle extends AbstractVerticle {
         clientState = new ClientState(vertx);
 
         if (!clientOptions.isDhtDisable()) {
-            dhtClient = new DHTClient(vertx);
+            dhtClient = new DHTClient(vertx, clientOptions, clientState);
         }
 
         if (clientOptions.getTorrentFilePaths() == null) {

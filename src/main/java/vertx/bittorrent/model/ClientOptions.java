@@ -15,6 +15,9 @@ public class ClientOptions {
     @Parameter(names = "--dht-disable")
     private boolean dhtDisable = false;
 
+    @Parameter(names = "--dht-bootstrap-node")
+    private String dhtBootstrapNode;
+
     @Parameter(names = "--dht-port")
     private int dhtPort = 6881;
 

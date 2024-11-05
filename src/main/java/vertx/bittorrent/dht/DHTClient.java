@@ -23,6 +23,7 @@ import vertx.bittorrent.dht.messages.GetPeersQuery;
 import vertx.bittorrent.dht.messages.GetPeersResponse;
 import vertx.bittorrent.dht.messages.PingQuery;
 import vertx.bittorrent.dht.messages.PingResponse;
+import vertx.bittorrent.model.ClientOptions;
 import vertx.bittorrent.model.HashKey;
 import vertx.bittorrent.model.Peer;
 import vertx.bittorrent.utils.AddressUtils;
@@ -34,6 +35,7 @@ public class DHTClient {
     private static final int FIND_NODE_CONCURRENCY = 3;
 
     private final Vertx vertx;
+    private final ClientOptions clientOptions;
     private final ClientState clientState;
 
     private final DHTProtocolHandler protocolHandler;
@@ -54,10 +56,11 @@ public class DHTClient {
     private int activeFindNodeQueries = 0;
     private int emptyFindNodeQueries = 0;
 
-    public DHTClient(Vertx vertx, ClientState clientState) {
+    public DHTClient(Vertx vertx, ClientOptions clientOptions, ClientState clientState) {
         log.info("Starting dht client");
 
         this.vertx = vertx;
+        this.clientOptions = clientOptions;
         this.clientState = clientState;
 
         protocolHandler = new DHTProtocolHandler(vertx);
@@ -107,7 +110,8 @@ public class DHTClient {
         });
 
         if (routingTable.isEmpty()) {
-            String bootstrapNode = System.getenv("DHT_BOOTSTRAP_NODE");
+            String bootstrapNode = StringUtils.defaultIfBlank(
+                    clientOptions.getDhtBootstrapNode(), System.getenv("DHT_BOOTSTRAP_NODE"));
 
             if (StringUtils.isNotBlank(bootstrapNode)) {
                 log.info("Using bootstrap node: {}", bootstrapNode);

@@ -22,10 +22,10 @@ BitTorrent Client with DHT support written in Java using Eclipse Vert.x.
 
 ## Run
 
-The application can be started using the `run` script with a path to torrent file as an argument:
+The application can be started using the `run` script with a path(s) to torrent file(s) as an argument:
 
 ```bash
-./run <torrent_file>
+./run <torrent_file> [<torrent_file2> ...]
 ```
 
 The script will build the application using `gradle installDist`.
@@ -34,8 +34,23 @@ To trigger a rebuild with the script, `gradle clean` needs to be run to delete t
 Alternatively the gradle run task can be used:
 
 ```bash
-gradle run --args="<torrent_file>"
+gradle run --args="<torrent_file> [<torrent_file2> ...]"
 ```
+
+### DHT
+
+Using DHT requires that an entrypoint is specified.
+This can be set with the environment variable `DHT_BOOTSTRAP_NODE` or parameter `--dht-bootstrap-node` for example to `87.98.162.88:6881` (`dht.transmissionbt.com`).
+
+```bash
+DHT_BOOTSTRAP_NODE=87.98.162.88:6881 ./run <torrent_file> [<torrent_file2> ...]
+```
+
+```bash
+./run <torrent_file> [<torrent_file2> ...] --dht-bootstrap-node 87.98.162.88:6881
+```
+
+The routing table will be saved to `dht.json`.
 
 ## Build
 

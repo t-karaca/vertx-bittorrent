@@ -63,7 +63,7 @@ public class DHTClient {
         this.clientOptions = clientOptions;
         this.clientState = clientState;
 
-        protocolHandler = new DHTProtocolHandler(vertx);
+        protocolHandler = new DHTProtocolHandler(vertx, clientOptions);
         tokenManager = new DHTTokenManager(vertx);
 
         protocolHandler.onQuery(PingQuery.class, this::onPingQuery);

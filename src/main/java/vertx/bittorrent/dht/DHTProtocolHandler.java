@@ -27,6 +27,7 @@ import vertx.bittorrent.dht.messages.GetPeersQuery;
 import vertx.bittorrent.dht.messages.Payload;
 import vertx.bittorrent.dht.messages.PingQuery;
 import vertx.bittorrent.dht.messages.QueryPayload;
+import vertx.bittorrent.model.ClientOptions;
 
 @Slf4j
 public class DHTProtocolHandler {
@@ -42,15 +43,16 @@ public class DHTProtocolHandler {
     private final Map<Class<? extends QueryPayload>, BiFunction<SocketAddress, QueryPayload, ? extends Payload>>
             queryHandlers = new HashMap<>();
 
-    public DHTProtocolHandler(Vertx vertx) {
+    public DHTProtocolHandler(Vertx vertx, ClientOptions clientOptions) {
         this.vertx = vertx;
+
         this.socket = vertx.createDatagramSocket();
 
         this.socket
-                .listen(6881, "0.0.0.0")
+                .listen(clientOptions.getDhtPort(), "0.0.0.0")
                 .onFailure(e -> log.error("Error", e))
                 .onSuccess(socket -> {
-                    log.info("DHT listening on port 6881");
+                    log.info("DHT listening on port {}", clientOptions.getDhtPort());
 
                     socket.handler(packet -> {
                         SocketAddress sender = packet.sender();

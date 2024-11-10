@@ -9,6 +9,10 @@ public final class RandomUtils {
 
     private RandomUtils() {}
 
+    public static void randomBytes(byte[] array) {
+        RANDOM.nextBytes(array);
+    }
+
     public static <T> T randomFrom(List<T> list) {
         if (list == null || list.isEmpty()) {
             return null;

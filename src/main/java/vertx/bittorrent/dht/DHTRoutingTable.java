@@ -31,7 +31,9 @@ public class DHTRoutingTable {
     private final HashKey nodeId;
     private final List<DHTBucket> buckets;
 
-    private final Map<HashKey, List<DHTPeerEntry>> peerMap;
+    private final Map<HashKey, List<DHTEntry<SocketAddress>>> peerMap;
+
+    private final DHTValueTable valueTable;
 
     @JsonIgnore
     private Handler<Void> updatedHandler;
@@ -40,6 +42,7 @@ public class DHTRoutingTable {
         nodeId = HashKey.random();
         buckets = new ArrayList<>();
         peerMap = new HashMap<>();
+        valueTable = new DHTValueTable();
 
         buckets.add(DHTBucket.initial());
 
@@ -50,10 +53,12 @@ public class DHTRoutingTable {
     public DHTRoutingTable(
             @JsonProperty("nodeId") HashKey nodeId,
             @JsonProperty("buckets") Collection<DHTBucket> buckets,
-            @JsonProperty("peerMap") Map<HashKey, List<DHTPeerEntry>> peerMap) {
+            @JsonProperty("peerMap") Map<HashKey, List<DHTEntry<SocketAddress>>> peerMap,
+            @JsonProperty("valueTable") DHTValueTable valueTable) {
         this.nodeId = nodeId;
         this.buckets = new ArrayList<>(buckets);
         this.peerMap = peerMap;
+        this.valueTable = valueTable;
 
         this.buckets.forEach(b -> b.onRefresh(this::onBucketRefreshed));
     }
@@ -191,14 +196,14 @@ public class DHTRoutingTable {
     }
 
     public void addPeerForTorrent(HashKey infoHash, SocketAddress address) {
-        List<DHTPeerEntry> peers = peerMap.computeIfAbsent(infoHash, k -> new ArrayList<>());
+        var peers = peerMap.computeIfAbsent(infoHash, k -> new ArrayList<>());
 
-        peers.removeIf(DHTPeerEntry::isStale);
+        peers.removeIf(DHTEntry::isStale);
 
         peers.stream()
-                .filter(peer -> peer.getPeerAddress().equals(address))
+                .filter(peer -> peer.getValue().equals(address))
                 .findAny()
-                .ifPresentOrElse(DHTPeerEntry::refresh, () -> peers.add(new DHTPeerEntry(address)));
+                .ifPresentOrElse(DHTEntry::refresh, () -> peers.add(new DHTEntry<>(address)));
 
         if (updatedHandler != null) {
             updatedHandler.handle(null);
@@ -206,15 +211,12 @@ public class DHTRoutingTable {
     }
 
     public List<byte[]> findPeersForTorrent(HashKey infoHash) {
-        List<DHTPeerEntry> peers = peerMap.get(infoHash);
+        var peers = peerMap.get(infoHash);
 
         if (peers != null) {
-            peers.removeIf(DHTPeerEntry::isStale);
+            peers.removeIf(DHTEntry::isStale);
 
-            return peers.stream()
-                    .map(DHTPeerEntry::getPeerAddress)
-                    .map(Peer::toCompact)
-                    .toList();
+            return peers.stream().map(DHTEntry::getValue).map(Peer::toCompact).toList();
         }
 
         return Collections.emptyList();

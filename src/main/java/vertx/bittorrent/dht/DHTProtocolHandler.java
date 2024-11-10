@@ -24,8 +24,10 @@ import vertx.bittorrent.dht.messages.DHTMessage;
 import vertx.bittorrent.dht.messages.DHTMessageType;
 import vertx.bittorrent.dht.messages.FindNodeQuery;
 import vertx.bittorrent.dht.messages.GetPeersQuery;
+import vertx.bittorrent.dht.messages.GetQuery;
 import vertx.bittorrent.dht.messages.Payload;
 import vertx.bittorrent.dht.messages.PingQuery;
+import vertx.bittorrent.dht.messages.PutQuery;
 import vertx.bittorrent.dht.messages.QueryPayload;
 import vertx.bittorrent.model.ClientOptions;
 
@@ -93,6 +95,8 @@ public class DHTProtocolHandler {
                                 case FindNodeQuery.QUERY_TYPE -> FindNodeQuery.from(value);
                                 case GetPeersQuery.QUERY_TYPE -> GetPeersQuery.from(value);
                                 case AnnouncePeerQuery.QUERY_TYPE -> AnnouncePeerQuery.from(value);
+                                case GetQuery.QUERY_TYPE -> GetQuery.from(value);
+                                case PutQuery.QUERY_TYPE -> PutQuery.from(value);
                                 default -> null;
                             };
 

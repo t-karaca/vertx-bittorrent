@@ -15,6 +15,10 @@ public class DHTLookupNode {
 
     @Getter
     @Setter
+    private long sequenceNumber = -1;
+
+    @Getter
+    @Setter
     private boolean queryFailed;
 
     @Getter

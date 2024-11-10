@@ -34,6 +34,8 @@ dependencies {
     implementation "com.fasterxml.jackson.core:jackson-databind:${jacksonVersion}"
     implementation "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${jacksonVersion}"
 
+    implementation "org.bouncycastle:bcprov-jdk18on:1.79"
+
     implementation "io.vertx:vertx-core:${vertxVersion}"
     implementation "io.vertx:vertx-config:${vertxVersion}"
     implementation "io.vertx:vertx-config-yaml:${vertxVersion}"

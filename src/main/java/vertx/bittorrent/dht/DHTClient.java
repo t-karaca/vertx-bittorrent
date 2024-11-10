@@ -1,5 +1,6 @@
 package vertx.bittorrent.dht;
 
+import be.adaxisoft.bencode.BEncodedValue;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
@@ -21,8 +22,12 @@ import vertx.bittorrent.dht.messages.FindNodeQuery;
 import vertx.bittorrent.dht.messages.FindNodeResponse;
 import vertx.bittorrent.dht.messages.GetPeersQuery;
 import vertx.bittorrent.dht.messages.GetPeersResponse;
+import vertx.bittorrent.dht.messages.GetQuery;
+import vertx.bittorrent.dht.messages.GetResponse;
 import vertx.bittorrent.dht.messages.PingQuery;
 import vertx.bittorrent.dht.messages.PingResponse;
+import vertx.bittorrent.dht.messages.PutQuery;
+import vertx.bittorrent.dht.messages.PutResponse;
 import vertx.bittorrent.model.ClientOptions;
 import vertx.bittorrent.model.HashKey;
 import vertx.bittorrent.model.Peer;
@@ -50,6 +55,7 @@ public class DHTClient {
     private boolean tableUpdated = false;
 
     private List<DHTLookup> activeLookups = new ArrayList<>();
+    private List<DHTValueLookup> activeValueLookups = new ArrayList<>();
 
     private SocketAddress bootstrapAddress = null;
 
@@ -70,6 +76,8 @@ public class DHTClient {
         protocolHandler.onQuery(FindNodeQuery.class, this::onFindNodeQuery);
         protocolHandler.onQuery(GetPeersQuery.class, this::onGetPeersQuery);
         protocolHandler.onQuery(AnnouncePeerQuery.class, this::onAnnouncePeerQuery);
+        protocolHandler.onQuery(GetQuery.class, this::onGetQuery);
+        protocolHandler.onQuery(PutQuery.class, this::onPutQuery);
 
         File dhtFile = new File("dht.json");
         if (dhtFile.exists()) {
@@ -134,6 +142,10 @@ public class DHTClient {
         } else {
             searchNeighbors();
         }
+    }
+
+    public DHTValueTable getValueTable() {
+        return routingTable.getValueTable();
     }
 
     public Future<Void> close() {
@@ -201,6 +213,45 @@ public class DHTClient {
         }
 
         return AnnouncePeerResponse.builder().nodeId(routingTable.getNodeId()).build();
+    }
+
+    private GetResponse onGetQuery(SocketAddress sender, GetQuery query) {
+        routingTable.refreshNode(query.getNodeId(), sender);
+
+        HashKey key = query.getTarget();
+
+        byte[] token = tokenManager.createToken(sender);
+
+        byte[] nodes = DHTNode.allToCompact(routingTable.findClosestNodesForId(key));
+
+        var response = GetResponse.builder()
+                .nodeId(routingTable.getNodeId())
+                .token(token)
+                .nodes(nodes);
+
+        routingTable.getValueTable().find(key).ifPresent(value -> {
+            response.value(value.getValue());
+
+            if (value.getKey() != null) {
+                response.key(value.getKey()) //
+                        .signature(value.getSignature())
+                        .seq(value.getSequenceNumber());
+            }
+        });
+
+        return response.build();
+    }
+
+    private PutResponse onPutQuery(SocketAddress sender, PutQuery query) {
+        routingTable.refreshNode(query.getNodeId(), sender);
+
+        if (tokenManager.validateToken(query.getToken(), sender)) {
+            routingTable.getValueTable().put(query);
+        } else {
+            throw DHTErrorException.create(203, "Bad token");
+        }
+
+        return PutResponse.builder().nodeId(routingTable.getNodeId()).build();
     }
 
     private void findNodeForBucket(DHTBucket bucket) {
@@ -314,6 +365,93 @@ public class DHTClient {
             for (var n : nodes) {
                 if (n.getToken() != null) {
                     announcePeer(n.getNode(), infoHash, n.getToken());
+                }
+            }
+        });
+    }
+
+    public void lookupValue(HashKey key, Handler<BEncodedValue> valueHandler) {
+        for (var l : activeValueLookups) {
+            if (l.getKey().equals(key)) {
+                return;
+            }
+        }
+
+        log.info("Starting value lookup for key {}", key);
+
+        var lookup = DHTValueLookup.forKey(vertx, protocolHandler, routingTable, key);
+
+        lookup.onValue(value -> {
+            valueHandler.handle(value);
+
+            lookup.cancel().onSuccess(v -> activeValueLookups.remove(lookup));
+        });
+
+        activeValueLookups.add(lookup);
+
+        lookup.start().onSuccess(nodes -> {
+            activeValueLookups.remove(lookup);
+        });
+    }
+
+    public void announceImmutableValue(BEncodedValue value) {
+        var dhtValue = routingTable.getValueTable().makeImmutable(value);
+
+        log.info("Announcing value for key {}", dhtValue.getHashKey());
+
+        var lookup = DHTValueLookup.forKey(vertx, protocolHandler, routingTable, dhtValue.getHashKey());
+
+        activeValueLookups.add(lookup);
+
+        lookup.start().onSuccess(nodes -> {
+            activeValueLookups.remove(lookup);
+
+            for (var n : nodes) {
+                if (n.getToken() != null) {
+                    protocolHandler
+                            .query(
+                                    n.getNode(),
+                                    PutQuery.builder()
+                                            .nodeId(routingTable.getNodeId())
+                                            .token(n.getToken())
+                                            .value(value)
+                                            .build())
+                            .onFailure(e -> log.debug("Error on put query: {}", e.getMessage()))
+                            .onSuccess(res -> log.info("Successfully announced value to {}", n.getNode()));
+                }
+            }
+        });
+    }
+
+    public void announceMutableValue(DHTValue dhtValue) {
+        log.info("Announcing value for key {}", dhtValue.getHashKey());
+
+        var lookup = DHTValueLookup.forKey(vertx, protocolHandler, routingTable, dhtValue.getHashKey());
+
+        activeValueLookups.add(lookup);
+
+        lookup.start().onSuccess(nodes -> {
+            activeValueLookups.remove(lookup);
+
+            for (var n : nodes) {
+                if (n.getToken() != null) {
+                    var builder = PutQuery.builder()
+                            .nodeId(routingTable.getNodeId())
+                            .token(n.getToken())
+                            .value(dhtValue.getValue())
+                            .key(dhtValue.getKey())
+                            .signature(dhtValue.getSignature())
+                            .salt(dhtValue.getSalt())
+                            .seq(dhtValue.getSequenceNumber());
+
+                    if (n.getSequenceNumber() >= 0) {
+                        builder.cas(n.getSequenceNumber());
+                    }
+
+                    protocolHandler
+                            .query(n.getNode(), builder.build())
+                            .onFailure(e -> log.debug("Error on put query: {}", e.getMessage()))
+                            .onSuccess(res -> log.info("Successfully announced value to {}", n.getNode()));
                 }
             }
         });

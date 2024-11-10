@@ -11,6 +11,7 @@ BitTorrent Client with DHT support written in Java using Eclipse Vert.x.
 - [x] Optimistic Unchoking
 - [x] Endgame
 - [x] DHT
+- [x] DHT Storage
 - [ ] UDP Tracker
 - [ ] Magnet Links
 
@@ -19,6 +20,7 @@ BitTorrent Client with DHT support written in Java using Eclipse Vert.x.
 - [x] [BEP 0003 (BitTorrent Protocol)](https://www.bittorrent.org/beps/bep_0003.html)
 - [x] [BEP 0005 (Distributed Hash Table)](https://www.bittorrent.org/beps/bep_0005.html)
 - [x] [BEP 0007 (IPv6 Tracker Extension)](https://www.bittorrent.org/beps/bep_0007.html)
+- [x] [BEP 0044 (DHT Data Storage)](https://www.bittorrent.org/beps/bep_0044.html)
 
 ## Run
 
